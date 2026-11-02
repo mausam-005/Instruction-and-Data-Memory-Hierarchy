@@ -1,0 +1,36 @@
+# Simulation outputs
+*.vcd
+*.vvp
+*.log
+*.jou
+*.wdb
+sim_out
+sim_build/
+
+# Vivado / EDA tool outputs
+.Xil/
+*.str
+*.runs/
+*.cache/
+*.hw/
+*.ip_user_files/
+*.rpt
+*.dcp
+*.bit
+
+# OS / Editor artifacts
+.DS_Store
+*.swp
+*~
+.vscode/
+
+# LaTeX temp files
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+
