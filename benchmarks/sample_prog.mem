@@ -1,0 +1,15 @@
+// Sample 32-bit RV32I Test Program in Hexadecimal format
+// Loaded into Instruction Memory via $readmemh
+// Format: 32-bit hex per word line (Word aligned: Index 0 = Addr 0x00, Index 1 = Addr 0x04, ...)
+
+00000013 // 0x00: NOP (addi x0, x0, 0)
+00500113 // 0x04: addi x2, x0, 5      (x2 = 5)
+00a00193 // 0x08: addi x3, x0, 10     (x3 = 10)
+00310233 // 0x0C: add  x4, x2, x3     (x4 = 15)
+00412023 // 0x10: sw   x4, 0(x2)      (Store 15 at Mem[5])
+00012283 // 0x14: lw   x5, 0(x2)      (Load from Mem[5] into x5)
+005202b3 // 0x18: add  x5, x4, x5     (x5 = 15 + 15 = 30)
+0000006f // 0x1C: jal  x0, 0          (Infinite loop / halt)
+00000000 // 0x20: padding
+00000000 // 0x24: padding
+
