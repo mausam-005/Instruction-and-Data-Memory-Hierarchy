@@ -1,0 +1,58 @@
+// =============================================================================
+// Benchmark Program: array_sum.mem
+// Project: Instruction and Data Memory Hierarchy
+// Description:
+//   RV32I 32-bit machine code test program in standard hexadecimal format.
+//   Evaluates memory bandwidth and memory contention speedup of Harvard
+//   over Von Neumann architectures.
+//
+// Program Logic:
+//   1. Initializes array base pointer in memory (x1 = 0x40).
+//   2. Initializes loop iteration counter (x2 = 4, unrolled by 2 words = 8 words).
+//   3. Initializes sum accumulator register (x3 = 0).
+//   4. Loop body loads 8 data words using back-to-back LW instructions:
+//      - LW x4, 0(x1)  : Loads word i
+//      - LW x5, 4(x1)  : Loads word i+1 (Back-to-back load creates continuous
+//                        simultaneous memory contention with instruction fetch)
+//      - ADD x3, x3, x4: Accumulates word i into sum
+//      - ADD x3, x3, x5: Accumulates word i+1 into sum
+//      - ADDI x1, x1, 8: Advances pointer by 2 words (8 bytes)
+//      - ADDI x2, x2, -1: Decrements loop counter
+//      - BNE x2, x0, -24: Loops until all 8 words are accumulated
+//   5. SW x3, 0(x1)    : Stores final accumulated sum (36 = 0x24) to memory at 0x60.
+//   6. JAL x0, 0       : Halts execution in an infinite self-loop.
+//
+// Memory Layout:
+//   - Instructions: Word indices 0 to 11 (Byte addresses 0x00 to 0x2C)
+//   - Data Array  : Word indices 16 to 23 (Byte addresses 0x40 to 0x5C)
+//     Values = {1, 2, 3, 4, 5, 6, 7, 8}
+//   - Result Sum  : Word index 24 (Byte address 0x60)
+//     Expected Final Sum = 1+2+3+4+5+6+7+8 = 36 (0x00000024)
+// =============================================================================
+
+// Instruction Memory Section: RV32I Machine Code (Addresses 0x00 to 0x2C)
+@00
+04000093 // 0x00: addi x1, x0, 64       (x1 = 0x40, array base pointer)
+00400113 // 0x04: addi x2, x0, 4        (x2 = 4, loop counter for 8 words)
+00000193 // 0x08: addi x3, x0, 0        (x3 = 0, sum accumulator)
+0000a203 // 0x0C: lw   x4, 0(x1)        (Load word i from data memory)
+0040a283 // 0x10: lw   x5, 4(x1)        (Back-to-back LW! Load word i+1)
+004181b3 // 0x14: add  x3, x3, x4       (Accumulate: sum += word i)
+005181b3 // 0x18: add  x3, x3, x5       (Accumulate: sum += word i+1)
+00808093 // 0x1C: addi x1, x1, 8        (Advance array pointer by 8 bytes)
+fff10113 // 0x20: addi x2, x2, -1       (Decrement loop counter)
+fe0114e3 // 0x24: bne  x2, x0, -24      (Branch to loop at 0x0C if x2 != 0)
+0030a023 // 0x28: sw   x3, 0(x1)        (Store final sum to memory at 0x60)
+0000006f // 0x2C: jal  x0, 0            (Infinite loop / halt execution)
+
+// Data Memory Section: 8 Data Words (Word indices 16 to 23, Addresses 0x40 to 0x5C)
+@10
+00000001 // 0x40: Array[0] = 1
+00000002 // 0x44: Array[1] = 2
+00000003 // 0x48: Array[2] = 3
+00000004 // 0x4C: Array[3] = 4
+00000005 // 0x50: Array[4] = 5
+00000006 // 0x54: Array[5] = 6
+00000007 // 0x58: Array[6] = 7
+00000008 // 0x5C: Array[7] = 8
+00000000 // 0x60: Final Sum Storage (Result: 36 = 0x00000024)
