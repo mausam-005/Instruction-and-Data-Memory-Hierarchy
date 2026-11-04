@@ -15,7 +15,9 @@
 ### 👥 Team ParraPulse
 
 **Course**: Modern Computer Architecture (MCA) • B.Tech (CS&AI) — Section A  
-**Institution**: Newton School of Technology, Rishihood University  
+**Institution**: Newton School of Technology, Rishihood University 
+
+
 
 ---
 
