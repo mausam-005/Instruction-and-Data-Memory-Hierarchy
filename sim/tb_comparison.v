@@ -145,55 +145,45 @@ module tb_comparison;
     // Von Neumann Interface Bridge & Multi-Cycle Hazard Handshake
     // -------------------------------------------------------------------------
     // In the single-port unified Von Neumann memory, memory access (LW/SW)
-    // collides with instruction fetch on the exact same port. The arbiter grants
-    // data first, asserting stall. In cycle 1, the data read/write executes and
-    // data is latched. In cycle 2 (SERVE_INSTR), the deferred instruction fetch
-    // completes and the core commits write-back and advances PC.
-    reg        vn_stall_q;
-    reg [31:0] vn_latched_instr;
-    reg [31:0] vn_latched_rdata;
+    // collides with instruction fetch on the exact same port.
+    // Cycle 1: Fetch instruction from PC and latch into vn_ir.
+    // Cycle 2: Memory access stage (stall PC, access data port).
+    reg [31:0] vn_ir;
+    reg        vn_mem_stage; // 0: FETCH, 1: MEM_ACCESS
 
-    wire vn_is_mem_instr = (vn_core_data_read_en || vn_core_data_write_en);
+    wire [6:0] fetch_opcode = vn_mem_instr_data[6:0];
+    wire is_mem_op = (fetch_opcode == 7'b0000011) || (fetch_opcode == 7'b0100011); // LW or SW
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
-            vn_stall_q           <= 1'b0;
-            vn_latched_instr     <= 32'h0000_0013;
-            vn_latched_rdata     <= 32'd0;
+            vn_mem_stage <= 1'b0;
+            vn_ir        <= 32'h0000_0013;
         end else begin
-            vn_stall_q <= vn_stall;
-
-            // When arbiter grants instruction fetch, record current opcode
-            if (vn_grant_instr) begin
-                vn_latched_instr <= vn_mem_instr_data;
-            end
-
-            // When arbiter grants data load, capture incoming memory word
-            if (vn_grant_data) begin
-                vn_latched_rdata <= vn_mem_data_rdata;
+            if (vn_mem_stage == 1'b0) begin
+                if (is_mem_op) begin
+                    vn_mem_stage <= 1'b1;
+                    vn_ir        <= vn_mem_instr_data;
+                end
+            end else begin
+                vn_mem_stage <= 1'b0;
             end
         end
     end
 
-    // Instruction bus: provide fetched instruction from memory during fetch grant;
-    // preserve current instruction opcode during data stall to avoid combinational loops
-    assign vn_core_instr_data = (vn_grant_instr) ? vn_mem_instr_data : vn_latched_instr;
-
-    // Data read bus: provide memory read data during grant, or latched read data during write-back
-    assign vn_core_data_rdata = (vn_grant_data) ? vn_mem_data_rdata : vn_latched_rdata;
+    // Core connections: freeze PC during collision, provide stable IR during data stage
+    assign vn_core_stall      = is_mem_op && (vn_mem_stage == 1'b0);
+    assign vn_core_instr_data = (vn_mem_stage == 1'b1) ? vn_ir : vn_mem_instr_data;
+    assign vn_core_data_rdata = vn_mem_data_rdata;
 
     // Memory bus multiplexing:
-    // When in collision stall, de-assert memory data request on cycle 2 to allow instruction grant
-    assign vn_mem_instr_read_en    = vn_core_instr_read_en;
+    // Instruction fetch occurs during FETCH stage; data access occurs during MEM_ACCESS stage
+    assign vn_mem_instr_read_en    = (vn_mem_stage == 1'b0);
     assign vn_mem_instr_addr       = vn_core_instr_addr;
-    assign vn_mem_data_read_en     = (vn_stall_q) ? 1'b0 : vn_core_data_read_en;
-    assign vn_mem_data_write_en    = (vn_stall_q) ? 1'b0 : vn_core_data_write_en;
+    assign vn_mem_data_read_en     = (vn_mem_stage == 1'b1) && vn_core_data_read_en;
+    assign vn_mem_data_write_en    = (vn_mem_stage == 1'b1) && vn_core_data_write_en;
     assign vn_mem_data_byte_enable = vn_core_data_byte_enable;
     assign vn_mem_data_addr        = vn_core_data_addr;
     assign vn_mem_data_wdata       = vn_core_data_wdata;
-
-    // Core stall input: freeze PC and register write-back during data access cycle
-    assign vn_core_stall = vn_stall;
 
     // Von Neumann Core Instance
     mini_core #(

@@ -172,7 +172,7 @@ module tb_harvard_mem;
         $display("\n[TEST 3] Verifying CONCURRENT Fetch + Data Access (Harvard Principle)...");
         test_count = test_count + 1;
 
-        @(posedge clk);
+        @(negedge clk);
         // Assert BOTH fetch and data store simultaneously
         instr_read_en    = 1;
         instr_addr       = 32'h0000_0010; // Fetch 'sw' instruction
@@ -195,6 +195,7 @@ module tb_harvard_mem;
 
         // In the NEXT cycle: Simultaneously fetch next instruction while reading written data
         @(posedge clk);
+        @(negedge clk);
         instr_addr    = 32'h0000_0014; // Fetch 'lw' instruction
         data_write_en = 0;
         data_read_en  = 1;

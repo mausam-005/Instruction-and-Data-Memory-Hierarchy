@@ -6,6 +6,8 @@
 *.wdb
 sim_out
 sim_build/
+sim/sim_*
+
 
 # Vivado / EDA tool outputs
 .Xil/
