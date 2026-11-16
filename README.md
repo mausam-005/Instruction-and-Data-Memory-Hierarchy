@@ -9,7 +9,7 @@
 [![ISA: RV32I-Subset](https://img.shields.io/badge/ISA-RISC--V%20RV32I%20Subset-yellow.svg)](https://riscv.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Team](https://img.shields.io/badge/Team-ParraPulse-purple.svg)](#-team-parrapulse)
-[![Project Report](https://img.shields.io/badge/Project%20Report-Google%20Drive-4285F4?logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1h7Ix4ANWt-GMGRvotEoXY6mtojfBjsJF/view?usp=sharing)
+[![Project Report](https://img.shields.io/badge/Project%20Report-Google%20Drive-4285F4?logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1HxIQQh_ys-8o41iLnRTYsdTiGArKg6vq/view?usp=sharing)
 
 ---
 
@@ -17,7 +17,7 @@
 
 **Course**: Modern Computer Architecture (MCA) • B.Tech (CS&AI) — Section A  
 **Institution**: Newton School of Technology, Rishihood University  
-**Project Report**: [📄 View Full Report (Google Drive)](https://drive.google.com/file/d/1h7Ix4ANWt-GMGRvotEoXY6mtojfBjsJF/view?usp=sharing) &nbsp;•&nbsp; [📑 Local Copy (`docs/MCA_report.pdf`)](docs/MCA_report.pdf)
+**Project Report**: [📄 View Full Report (Google Drive)](https://drive.google.com/file/d/1HxIQQh_ys-8o41iLnRTYsdTiGArKg6vq/view?usp=sharing) &nbsp;•&nbsp; [📑 Local Copy (`docs/MCA_report.pdf`)](docs/MCA_report.pdf)
 
 **Project Demo**: [🎥 Watch Demo Video (Google Drive)](https://drive.google.com/file/d/1MT-75QLSNY-Y-3xUJg2uCGPZHxCEZx8F/view?usp=sharing)
 
