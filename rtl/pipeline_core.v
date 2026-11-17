@@ -23,8 +23,9 @@ module pipeline_core #(
     input  wire        clk,
     input  wire        rst,
 
-    // External Pipeline Stall (Cache line refill freeze / Bus arbitration)
-    input  wire        stall,
+    // External Pipeline Stall & Structural Hazard Controls
+    input  wire        stall,          // Global pipeline freeze (e.g. cache line refill)
+    input  wire        stall_fetch,    // Structural fetch stall (holds PC, injects IF/ID bubble)
 
     // Instruction Memory / I-Cache Interface (Fetch Stage)
     output wire        imem_read_en,
@@ -49,7 +50,8 @@ module pipeline_core #(
     output wire [4:0]  probe_wb_rd,
     output wire        probe_wb_reg_write,
     output wire        probe_load_use_hazard,
-    output wire        probe_branch_taken
+    output wire        probe_branch_taken,
+    output wire        probe_instr_retired
 );
 
     // =========================================================================
@@ -90,9 +92,9 @@ module pipeline_core #(
     wire        ex_branch_taken;   // Asserted on branch condition true or jump in EX
     wire [31:0] branch_target_ex;  // Calculated branch/jump redirection target
 
-    wire stall_pc     = stall || stall_hazard;
-    wire stall_if_id  = stall || stall_hazard;
-    wire flush_if_id  = ex_branch_taken;
+    wire stall_pc     = stall || stall_hazard || stall_fetch;
+    wire stall_if_id  = (stall || stall_hazard) && !stall_fetch;
+    wire flush_if_id  = ex_branch_taken || stall_fetch;
     wire stall_id_ex  = stall;
     wire flush_id_ex  = stall_hazard || ex_branch_taken;
     wire stall_ex_mem = stall;
@@ -691,6 +693,7 @@ module pipeline_core #(
     assign probe_wb_reg_write    = wb_reg_write;
     assign probe_load_use_hazard = stall_hazard;
     assign probe_branch_taken    = ex_branch_taken;
+    assign probe_instr_retired   = (wb_reg_write && (wb_rd != 5'd0)) || dmem_write_en || ex_branch;
 
 endmodule
 
