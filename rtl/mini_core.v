@@ -6,11 +6,12 @@
 //     - 32-bit Program Counter register (program_counter)
 //     - 32-bit Arithmetic Logic Unit (alu)
 //     - 32 x 32-bit Register File (x0 hardwired to zero)
-//     - Instruction Decoder supporting:
-//         * R-Type: ADD, SUB, AND, OR, XOR, SLT
-//         * I-Type: ADDI, LW
+//     - Comprehensive Instruction Decoder supporting:
+//         * R-Type: ADD, SUB, AND, OR, XOR, SLT, SLTU, SLL, SRL, SRA
+//         * I-Type: ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI, LW, JALR
 //         * S-Type: SW
-//         * B-Type: BEQ, BNE
+//         * B-Type: BEQ, BNE, BLT, BGE, BLTU, BGEU
+//         * U-Type: LUI, AUIPC
 //         * J-Type: JAL
 //     - Memory bus interfaces for instruction fetch and data access.
 //     - Pipeline flow control supporting memory contention stalls.
@@ -40,12 +41,15 @@ module mini_core #(
     // =========================================================================
     // RV32I Opcode Definitions
     // =========================================================================
-    localparam [6:0] OPCODE_R_TYPE = 7'b0110011; // ADD, SUB, AND, OR, XOR, SLT
-    localparam [6:0] OPCODE_I_TYPE = 7'b0010011; // ADDI
+    localparam [6:0] OPCODE_R_TYPE = 7'b0110011; // ADD, SUB, AND, OR, XOR, SLT, SLTU, SLL, SRL, SRA
+    localparam [6:0] OPCODE_I_TYPE = 7'b0010011; // ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI
     localparam [6:0] OPCODE_LOAD   = 7'b0000011; // LW
     localparam [6:0] OPCODE_STORE  = 7'b0100011; // SW
-    localparam [6:0] OPCODE_BRANCH = 7'b1100011; // BEQ, BNE
+    localparam [6:0] OPCODE_BRANCH = 7'b1100011; // BEQ, BNE, BLT, BGE, BLTU, BGEU
     localparam [6:0] OPCODE_JAL    = 7'b1101111; // JAL
+    localparam [6:0] OPCODE_JALR   = 7'b1100111; // JALR
+    localparam [6:0] OPCODE_LUI    = 7'b0110111; // LUI
+    localparam [6:0] OPCODE_AUIPC  = 7'b0010111; // AUIPC
 
     // =========================================================================
     // ALU Control Operation Codes (matching rtl/alu.v)
@@ -106,6 +110,7 @@ module mini_core #(
     wire [31:0] imm_i = {{20{instr[31]}}, instr[31:20]};
     wire [31:0] imm_s = {{20{instr[31]}}, instr[31:25], instr[11:7]};
     wire [31:0] imm_b = {{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0};
+    wire [31:0] imm_u = {instr[31:12], 12'b0};
     wire [31:0] imm_j = {{11{instr[31]}}, instr[31], instr[19:12], instr[20], instr[30:21], 1'b0};
 
     // =========================================================================
@@ -142,26 +147,40 @@ module mini_core #(
     end
 
     // =========================================================================
-    // Control & ALU Decoding
+    // ALU Input Operand Selection
+    // =========================================================================
+    reg [31:0] alu_a;
+    always @(*) begin
+        case (opcode)
+            OPCODE_AUIPC: alu_a = pc;
+            OPCODE_LUI:   alu_a = 32'd0;
+            default:      alu_a = rs1_data;
+        endcase
+    end
+
+    reg [31:0] alu_b;
+    always @(*) begin
+        case (opcode)
+            OPCODE_R_TYPE: alu_b = rs2_data;
+            OPCODE_BRANCH: alu_b = rs2_data;
+            OPCODE_STORE:  alu_b = imm_s;
+            OPCODE_LUI:    alu_b = imm_u;
+            OPCODE_AUIPC:  alu_b = imm_u;
+            OPCODE_JAL:    alu_b = imm_j;
+            default:       alu_b = imm_i; // I-Type, Load, JALR
+        endcase
+    end
+
+    // =========================================================================
+    // Control & ALU Operation Decoding
     // =========================================================================
     reg [3:0] alu_control;
-    reg [31:0] alu_b;
-    reg [1:0]  wb_sel;
-
     always @(*) begin
-        // Safe default assignments
-        alu_b       = rs2_data;
         alu_control = ALU_ADD;
-        reg_write   = 1'b0;
-        wb_sel      = WB_ALU;
-
         case (opcode)
             OPCODE_R_TYPE: begin
-                alu_b     = rs2_data;
-                reg_write = 1'b1;
-                wb_sel    = WB_ALU;
                 case (funct3)
-                    3'b000:  alu_control = (funct7[5]) ? ALU_SUB : ALU_ADD; // SUB / ADD
+                    3'b000:  alu_control = (funct7[5]) ? ALU_SUB : ALU_ADD;
                     3'b001:  alu_control = ALU_SLL;
                     3'b010:  alu_control = ALU_SLT;
                     3'b011:  alu_control = ALU_SLTU;
@@ -174,55 +193,25 @@ module mini_core #(
             end
 
             OPCODE_I_TYPE: begin
-                alu_b     = imm_i;
-                reg_write = 1'b1;
-                wb_sel    = WB_ALU;
                 case (funct3)
-                    3'b000:  alu_control = ALU_ADD; // ADDI
+                    3'b000:  alu_control = ALU_ADD;
+                    3'b001:  alu_control = ALU_SLL;
                     3'b010:  alu_control = ALU_SLT;
                     3'b011:  alu_control = ALU_SLTU;
                     3'b100:  alu_control = ALU_XOR;
+                    3'b101:  alu_control = (funct7[5]) ? ALU_SRA : ALU_SRL;
                     3'b110:  alu_control = ALU_OR;
                     3'b111:  alu_control = ALU_AND;
-                    3'b001:  alu_control = ALU_SLL;
-                    3'b101:  alu_control = (funct7[5]) ? ALU_SRA : ALU_SRL;
                     default: alu_control = ALU_ADD;
                 endcase
             end
 
-            OPCODE_LOAD: begin
-                alu_b       = imm_i;
-                alu_control = ALU_ADD; // Effective Address = rs1 + imm_i
-                reg_write   = 1'b1;
-                wb_sel      = WB_MEM;
-            end
-
-            OPCODE_STORE: begin
-                alu_b       = imm_s;
-                alu_control = ALU_ADD; // Effective Address = rs1 + imm_s
-                reg_write   = 1'b0;
-                wb_sel      = WB_ALU;
-            end
-
             OPCODE_BRANCH: begin
-                alu_b       = rs2_data;
-                alu_control = ALU_SUB; // Subtraction for equality comparison
-                reg_write   = 1'b0;
-                wb_sel      = WB_ALU;
-            end
-
-            OPCODE_JAL: begin
-                alu_b       = imm_j;
-                alu_control = ALU_ADD;
-                reg_write   = 1'b1;
-                wb_sel      = WB_PC4;
+                alu_control = ALU_SUB; // Comparison
             end
 
             default: begin
-                alu_b       = rs2_data;
-                alu_control = ALU_ADD;
-                reg_write   = 1'b0;
-                wb_sel      = WB_ALU;
+                alu_control = ALU_ADD; // Loads, stores, LUI, AUIPC, jumps
             end
         endcase
     end
@@ -230,7 +219,6 @@ module mini_core #(
     // =========================================================================
     // ALU Instantiation
     // =========================================================================
-    wire [31:0] alu_a = rs1_data;
     wire [31:0] alu_result;
     wire        alu_zero;
     wire        alu_negative;
@@ -256,25 +244,75 @@ module mini_core #(
     reg branch_cond;
     always @(*) begin
         case (funct3)
-            3'b000:  branch_cond = alu_zero;       // BEQ
-            3'b001:  branch_cond = ~alu_zero;      // BNE
-            3'b100:  branch_cond = alu_negative ^ alu_overflow; // BLT
+            3'b000:  branch_cond = alu_zero;                       // BEQ
+            3'b001:  branch_cond = ~alu_zero;                      // BNE
+            3'b100:  branch_cond = alu_negative ^ alu_overflow;     // BLT
             3'b101:  branch_cond = ~(alu_negative ^ alu_overflow); // BGE
-            3'b110:  branch_cond = ~alu_carry;     // BLTU
-            3'b111:  branch_cond = alu_carry;      // BGEU
+            3'b110:  branch_cond = ~alu_carry;                     // BLTU
+            3'b111:  branch_cond = alu_carry;                      // BGEU
             default: branch_cond = 1'b0;
         endcase
     end
 
     wire is_branch = (opcode == OPCODE_BRANCH);
     wire is_jal    = (opcode == OPCODE_JAL);
+    wire is_jalr   = (opcode == OPCODE_JALR);
 
-    assign branch_taken  = (!stall) && ((is_branch && branch_cond) || is_jal);
-    assign branch_target = (is_jal) ? (pc + imm_j) : (pc + imm_b);
+    assign branch_taken = (!stall) && ((is_branch && branch_cond) || is_jal || is_jalr);
+
+    reg [31:0] branch_target_comb;
+    always @(*) begin
+        if (is_jalr) begin
+            branch_target_comb = (rs1_data + imm_i) & 32'hFFFFFFFE;
+        end else if (is_jal) begin
+            branch_target_comb = pc + imm_j;
+        end else begin
+            branch_target_comb = pc + imm_b;
+        end
+    end
+    assign branch_target = branch_target_comb;
 
     // =========================================================================
-    // Write-Back Multiplexer
+    // Write-Back Control & Multiplexer
     // =========================================================================
+    reg [1:0] wb_sel;
+
+    always @(*) begin
+        reg_write = 1'b0;
+        wb_sel    = WB_ALU;
+
+        case (opcode)
+            OPCODE_R_TYPE: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_ALU;
+            end
+            OPCODE_I_TYPE: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_ALU;
+            end
+            OPCODE_LOAD: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_MEM;
+            end
+            OPCODE_LUI: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_ALU;
+            end
+            OPCODE_AUIPC: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_ALU;
+            end
+            OPCODE_JAL, OPCODE_JALR: begin
+                reg_write = 1'b1;
+                wb_sel    = WB_PC4;
+            end
+            default: begin
+                reg_write = 1'b0;
+                wb_sel    = WB_ALU;
+            end
+        endcase
+    end
+
     always @(*) begin
         case (wb_sel)
             WB_MEM:  reg_wdata = data_rdata;
@@ -293,4 +331,3 @@ module mini_core #(
     assign data_wdata       = rs2_data;
 
 endmodule
-
