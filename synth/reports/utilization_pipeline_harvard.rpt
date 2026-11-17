@@ -1,0 +1,29 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+-----------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2022.2 (lin64) Build 3671981 Fri Oct 14 04:59:54 MDT 2022
+| Date         : Tue Nov 17 18:00:00 2026
+| Host         : arch-synth-node01 running 64-bit Ubuntu 22.04.3 LTS
+| Command      : report_utilization -file ./synth/reports/utilization_pipeline_harvard.rpt
+| Design       : pipeline_harvard_top
+| Device       : 7a35tcpg236-1
+| Design State : Synthesized
+-----------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+1. Slice Logic
+--------------
+
++----------------------------+------+-------+-----------+-------+
+|          Site Type         | Used | Fixed | Available | Util% |
++----------------------------+------+-------+-----------+-------+
+| Slice LUTs                 |  312 |     0 |     20800 |  1.50 |
+|   LUT as Logic             |  280 |     0 |     20800 |  1.35 |
+|   LUT as Memory            |   32 |     0 |      9600 |  0.33 |
+|     LUT as Distributed RAM |   32 |     0 |           |       |
+| Slice Registers            |  384 |     0 |     41600 |  0.92 |
+|   Register as Flip Flop    |  384 |     0 |     41600 |  0.92 |
+| Block RAM Tile             |    0 |     0 |        50 |  0.00 |
+| DSP48E1 Slices             |    0 |     0 |        90 |  0.00 |
+| Global Clock Buffers       |    1 |     0 |        32 |  3.13 |
++----------------------------+------+-------+-----------+-------+
