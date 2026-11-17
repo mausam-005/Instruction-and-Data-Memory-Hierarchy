@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # Simulation runner script: Instruction and Data Memory Hierarchy
-# Usage: ./run.sh [harvard | vn | comp | icache]
+# Usage: ./run.sh [harvard | vn | comp | core | icache]
 # ==============================================================================
 set -e
 
@@ -16,6 +16,14 @@ if [ "$MODE" == "vn" ]; then
         rtl/von_neumann_top.v \
         sim/tb_von_neumann.v
     vvp sim/sim_vn
+elif [ "$MODE" == "core" ]; then
+    echo "===> Compiling & Running RV32I Mini Core Datapath Unit Testbench..."
+    iverilog -g2012 -o sim/sim_core \
+        rtl/program_counter.v \
+        rtl/alu.v \
+        rtl/mini_core.v \
+        sim/tb_mini_core.v
+    vvp sim/sim_core
 elif [ "$MODE" == "comp" ]; then
     echo "===> Compiling & Running Head-to-Head Comparative Benchmark..."
     iverilog -g2012 -o sim/sim_comparison \

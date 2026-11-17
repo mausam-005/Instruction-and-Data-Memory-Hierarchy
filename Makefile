@@ -13,7 +13,7 @@ SIM_DIR   = sim
 SYNTH_DIR = synth
 BENCH_DIR = benchmarks
 
-.PHONY: all help sim-harvard sim-vn sim-comparison sim-icache wave wave-vn wave-comp synth clean
+.PHONY: all help sim-harvard sim-vn sim-core sim-comparison sim-icache wave wave-vn wave-core wave-comp synth clean
 
 all: sim-harvard
 
@@ -21,10 +21,12 @@ help:
 	@echo "Available build and simulation targets:"
 	@echo "  make sim-harvard     : Compile & simulate Harvard memory hierarchy"
 	@echo "  make sim-vn          : Compile & simulate Von Neumann baseline"
+	@echo "  make sim-core        : Compile & simulate RV32I execution engine datapath"
 	@echo "  make sim-comparison  : Run head-to-head comparison benchmark"
 	@echo "  make sim-icache      : Compile & simulate L1 Instruction Cache testbench"
 	@echo "  make wave            : Open Harvard simulation waveform in GTKWave"
 	@echo "  make wave-vn         : Open Von Neumann simulation waveform in GTKWave"
+	@echo "  make wave-core       : Open Core unit simulation waveform in GTKWave"
 	@echo "  make wave-comp       : Open comparison waveform in GTKWave"
 	@echo "  make synth           : Run FPGA synthesis via Xilinx Vivado (batch mode)"
 	@echo "  make clean           : Remove simulation build outputs and dumps"
@@ -46,6 +48,15 @@ sim-vn:
 		$(RTL_DIR)/von_neumann_top.v \
 		$(SIM_DIR)/tb_von_neumann.v
 	$(VVP) $(SIM_DIR)/sim_vn
+
+sim-core:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) -g2012 -o $(SIM_DIR)/sim_core \
+		$(RTL_DIR)/program_counter.v \
+		$(RTL_DIR)/alu.v \
+		$(RTL_DIR)/mini_core.v \
+		$(SIM_DIR)/tb_mini_core.v
+	$(VVP) $(SIM_DIR)/sim_core
 
 sim-comparison:
 	@mkdir -p $(SIM_DIR)
@@ -74,6 +85,9 @@ wave:
 
 wave-vn:
 	$(GTKWAVE) $(SIM_DIR)/von_neumann.vcd &
+
+wave-core:
+	$(GTKWAVE) $(SIM_DIR)/mini_core.vcd &
 
 wave-comp:
 	$(GTKWAVE) $(SIM_DIR)/comparison.vcd &
