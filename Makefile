@@ -13,7 +13,7 @@ SIM_DIR   = sim
 SYNTH_DIR = synth
 BENCH_DIR = benchmarks
 
-.PHONY: all help sim-harvard sim-vn sim-comparison wave wave-vn wave-comp synth clean
+.PHONY: all help sim-harvard sim-vn sim-comparison sim-icache wave wave-vn wave-comp synth clean
 
 all: sim-harvard
 
@@ -22,6 +22,7 @@ help:
 	@echo "  make sim-harvard     : Compile & simulate Harvard memory hierarchy"
 	@echo "  make sim-vn          : Compile & simulate Von Neumann baseline"
 	@echo "  make sim-comparison  : Run head-to-head comparison benchmark"
+	@echo "  make sim-icache      : Compile & simulate L1 Instruction Cache testbench"
 	@echo "  make wave            : Open Harvard simulation waveform in GTKWave"
 	@echo "  make wave-vn         : Open Von Neumann simulation waveform in GTKWave"
 	@echo "  make wave-comp       : Open comparison waveform in GTKWave"
@@ -60,6 +61,13 @@ sim-comparison:
 		$(RTL_DIR)/von_neumann_top.v \
 		$(SIM_DIR)/tb_comparison.v
 	$(VVP) $(SIM_DIR)/sim_comparison
+
+sim-icache:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) -g2012 -o $(SIM_DIR)/sim_icache \
+		$(RTL_DIR)/icache.v \
+		$(SIM_DIR)/tb_icache.v
+	$(VVP) $(SIM_DIR)/sim_icache
 
 wave:
 	$(GTKWAVE) $(SIM_DIR)/harvard_mem.vcd &
