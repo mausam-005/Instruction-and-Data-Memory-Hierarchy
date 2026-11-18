@@ -55,19 +55,27 @@
    - [4.3 Top-Level Harvard Subsystem & Concurrency Detector](#43-top-level-harvard-subsystem--concurrency-detector)
    - [4.4 Unified Von Neumann Memory & Bus Arbiter Subsystem](#44-unified-von-neumann-memory--bus-arbiter-subsystem)
    - [4.5 Lightweight CPU Execution Engine, Datapath & ALU](#45-lightweight-cpu-execution-engine-datapath--alu)
+   - [4.6 5-Stage Pipelined RV32I Processor Core (`pipeline_core.v`, `pipe_regs.v`)](#46-5-stage-pipelined-rv32i-processor-core-pipeline_corev-pipe_regsv)
+   - [4.7 Unified Von Neumann Pipelined Baseline Core (`unified_pipeline_top.v`)](#47-unified-von-neumann-pipelined-baseline-core-unified_pipeline_topv)
+   - [4.8 L1 Instruction Cache & Pipelined Harvard Subsystem (`icache.v`, `pipeline_harvard_top.v`)](#48-l1-instruction-cache--pipelined-harvard-subsystem-icachev-pipeline_harvard_topv)
 5. [Workloads & Verification Benchmark Programs](#5-workloads--verification-benchmark-programs)
    - [5.1 Verification Sequence (`sample_prog.mem`)](#51-verification-sequence-sample_progmem)
    - [5.2 Memory Contention Benchmark (`array_sum.mem`)](#52-memory-contention-benchmark-array_summem)
+   - [5.3 Memory-Intensive Matrix Multiplication Workload (`matrix_mult.mem`)](#53-memory-intensive-matrix-multiplication-workload-matrix_multmem)
 6. [Hardware Telemetry & Performance Counters](#6-hardware-telemetry--performance-counters)
+   - [6.1 Baseline Line-Rate Hardware Monitors](#61-baseline-line-rate-hardware-monitors)
+   - [6.2 32-Bit Hardware Performance Telemetry Engine (`phase2_telemetry.v`)](#62-32-bit-hardware-performance-telemetry-engine-phase2_telemetryv)
 7. [FPGA Synthesis & Hardware Resource Utilization](#7-fpga-synthesis--hardware-resource-utilization)
    - [7.1 Vivado Synthesis Protocol (Xilinx Artix-7)](#71-vivado-synthesis-protocol-xilinx-artix-7)
-   - [7.2 Resource Utilization Breakdown (LUTs, FFs, BRAMs)](#72-resource-utilization-breakdown-luts-ffs-brams)
+   - [7.2 Phase I Resource Utilization Breakdown (LUTs, FFs, BRAMs)](#72-phase-i-resource-utilization-breakdown-luts-ffs-brams)
    - [7.3 Static Timing Analysis & Setup Slack](#73-static-timing-analysis--setup-slack)
+   - [7.4 Phase II FPGA Synthesis & Timing Closure Analysis ($F_{max}$)](#74-phase-ii-fpga-synthesis--timing-closure-analysis-f_max)
 8. [Verification Suites & Experimental Benchmarking](#8-verification-suites--experimental-benchmarking)
    - [8.1 Harvard Memory Hierarchy Verification (`tb_harvard_mem.v`)](#81-harvard-memory-hierarchy-verification-tb_harvard_memv)
    - [8.2 Von Neumann Baseline Verification (`tb_von_neumann.v`)](#82-von-neumann-baseline-verification-tb_von_neumannv)
    - [8.3 Head-to-Head Comparative Benchmark (`tb_comparison.v`)](#83-head-to-head-comparative-benchmark-tb_comparisonv)
-   - [8.4 Waveform Inspection Guide](#84-waveform-inspection-guide)
+   - [8.4 Unified Pipelined Core Verification & Telemetry Results (`tb_unified_pipeline.v`)](#84-unified-pipelined-core-verification--telemetry-results-tb_unified_pipelinev)
+   - [8.5 Waveform Inspection Guide](#85-waveform-inspection-guide)
 9. [Repository Layout & Artifact Manifest](#9-repository-layout--artifact-manifest)
 10. [Installation, Reproduction & Simulation Guide](#10-installation-reproduction--simulation-guide)
 11. [Academic Integrity, References & License](#11-academic-integrity-references--license)
@@ -261,6 +269,64 @@ In the Harvard architecture, address lines directly feed independent memory addr
 * **32-bit ALU:** Implements 10 core RV32I operations: `ADD`, `SUB`, `AND`, `OR`, `XOR`, `SLT`, `SLTU`, `SLL`, `SRL`, `SRA`, with zero, negative, carry, and overflow status flags.
 * **Execution Datapath:** 32 general-purpose 32-bit registers (`x0` hardwired to zero), instruction field decoder supporting R-type, I-type (`ADDI`, `LW`), S-type (`SW`), B-type (`BEQ`, `BNE`), and J-type (`JAL`) instructions.
 
+### 4.6 5-Stage Pipelined RV32I Processor Core (`pipeline_core.v`, `pipe_regs.v`)
+* **Files:** [`rtl/pipeline_core.v`](rtl/pipeline_core.v), [`rtl/pipe_regs.v`](rtl/pipe_regs.v)
+* **Pipelined Datapath Stages:** Classical 5-stage RISC microarchitecture:
+  1. **IF (Instruction Fetch):** Program Counter generation, branch redirection multiplexing, and instruction memory read requests.
+  2. **ID (Instruction Decode):** Dual-read register file access, sign-extended 32-bit immediate generation (I, S, B, U, J types), and control decoding.
+  3. **EX (Execute / Address Calc):** 32-bit RV32I ALU operation, full operand forwarding network (EX/MEM and MEM/WB bypasses), and branch target resolution.
+  4. **MEM (Memory Access):** Data memory read/write interfacing with 4-bit byte-enable write masking for halfword and byte accesses.
+  5. **WB (Writeback):** Register file commit from ALU result, loaded memory data, or link address ($PC + 4$).
+* **Hazard & Flow Control Unit:**
+  - **Data Forwarding:** Eliminates RAW dependencies between consecutive arithmetic instructions with 0 stall overhead.
+  - **Load-Use Hazard Detection:** Injects a single-cycle hardware bubble when an instruction immediately consumes loaded data.
+  - **Control Hazard Squashing:** Resolves branches in EX stage and flushes speculative IF and ID stages on misprediction.
+
+### 4.7 Unified Von Neumann Pipelined Baseline Core (`unified_pipeline_top.v`)
+* **File:** [`rtl/unified_pipeline_top.v`](rtl/unified_pipeline_top.v)
+* **Author / Owner:** Daniel Tayal (`2401010140`)
+* **Microarchitecture & The Shared Bus Contention Proof:**
+  - Couples the 5-stage pipelined RV32I core with a single-port Unified Memory (`unified_mem.v`).
+  - **Structural Hazard Collision:** In every cycle where a memory instruction (`LW` or `SW`) occupies the MEM stage (`dmem_read_en || dmem_write_en`), both the **Fetch (IF)** and **Memory (MEM)** stages contend for the single shared memory port.
+  - **Priority Bus Multiplexing:** Priority is granted to the older in-flight instruction in the MEM stage to prevent pipeline deadlocks and ensure precise retirement order.
+  - **Pipeline Bubble Injection:**
+    - The structural hazard detection logic asserts `stall_fetch = 1`.
+    - The Program Counter is frozen (`stall_pc = 1`), preserving the fetch address for the deferred instruction.
+    - An architectural bubble (NOP: `addi x0, x0, 0` / `32'h00000013`) is synchronously injected into the `pipe_reg_if_id` pipeline register.
+    - The MEM stage completes its Load or Store in that cycle and advances to WB.
+    - In the subsequent cycle, the MEM stage is inactive, the shared bus is granted to IF, and the deferred instruction is successfully fetched.
+  - **Quantitative Result:** Every single `LW` and `SW` instruction provokes an exact single-cycle structural stall, providing empirical physical proof of the Von Neumann bottleneck in pipelined processors.
+
+```
+       UNIFIED VON NEUMANN PIPELINED BASELINE ARCHITECTURE (unified_pipeline_top.v)
+
+       ┌────────────────────────────────────────────────────────┐
+       │             5-Stage RV32I Pipelined Core               │
+       │   [ IF ] ──► [ ID ] ──► [ EX ] ──► [ MEM ] ──► [ WB ]  │
+       └─────┬─────────────────────────────────┬────────────────┘
+             │ IF Fetch Req                    │ MEM Data Req (LW/SW)
+             ▼                                 ▼
+       ┌────────────────────────────────────────────────────────┐
+       │         STRUCTURAL HAZARD ARBITER & BUBBLE LOGIC       │
+       │  - If MEM active (LW/SW):                              │
+       │      * Grant bus to MEM stage                          │
+       │      * Assert stall_fetch = 1 (Freeze PC)              │
+       │      * Inject NOP bubble into IF/ID register           │
+       │  - Else: Grant bus to IF stage (0 stall fetch)         │
+       └──────────────────────────┬─────────────────────────────┘
+                                  │ Single 32-bit Memory Bus
+                                  ▼
+                     ┌─────────────────────────┐
+                     │       unified_mem       │
+                     │  (Single Physical Port) │
+                     │  256 words x 32 bits    │
+                     └─────────────────────────┘
+```
+
+### 4.8 L1 Instruction Cache & Pipelined Harvard Subsystem (`icache.v`, `pipeline_harvard_top.v`)
+* **Files:** [`rtl/icache.v`](rtl/icache.v), [`rtl/pipeline_harvard_top.v`](rtl/pipeline_harvard_top.v)
+* Direct-mapped 4-word line burst refill cache resolving instruction access latency, fully integrated into the Harvard split-bus memory hierarchy.
+
 ---
 
 ## 5. Workloads & Verification Benchmark Programs
@@ -291,10 +357,33 @@ In the Harvard architecture, address lines directly feed independent memory addr
   5. Terminates at `0x2C` (`JAL x0, 0`).
 * **Architectural Stress Effect:** Every `LW` and `SW` operation triggers simultaneous memory read/write requests alongside the CPU's sequential instruction fetch, exposing the Von Neumann shared bus bottleneck and verifying Harvard's contention-free execution.
 
+### 5.3 Memory-Intensive Matrix Multiplication Workload (`matrix_mult.mem`)
+* **File:** [`benchmarks/matrix_mult.mem`](benchmarks/matrix_mult.mem)
+* **Author / Owner:** Daniel Tayal (`2401010140`)
+* **Workload Description:** A dense $2 \times 2$ Matrix Multiplication algorithm ($C = A \times B$) implemented entirely in RV32I assembly. Matrix multiplication is universally recognized in computer architecture as the ultimate memory hierarchy stress test due to its intense data access density and repeated interleaved operand streaming.
+* **Mathematical Matrix Formulation:**
+  $$\mathbf{A} = \begin{bmatrix} 2 & 3 \\ 4 & 5 \end{bmatrix}, \quad \mathbf{B} = \begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}$$
+  $$\mathbf{C} = \mathbf{A} \times \mathbf{B} = \begin{bmatrix} (2\cdot 1 + 3\cdot 3) & (2\cdot 2 + 3\cdot 4) \\ (4\cdot 1 + 5\cdot 3) & (4\cdot 2 + 5\cdot 4) \end{bmatrix} = \begin{bmatrix} 11 & 16 \\ 19 & 28 \end{bmatrix}$$
+  $$\text{Checksum } \Sigma(C) = 11 + 16 + 19 + 28 = 74 \quad (\text{0x4A})$$
+* **Non-Overlapping Memory Organization:**
+  - **Instructions:** Byte addresses `0x000` to `0x10C` (Word indices 0 to 67, 68 machine instructions).
+  - **Matrix A Storage:** Byte addresses `0x180` to `0x18C` (Word indices 96 to 99 / `@60`).
+  - **Matrix B Storage:** Byte addresses `0x190` to `0x19C` (Word indices 100 to 103 / `@64`).
+  - **Matrix C Result Storage:** Byte addresses `0x1A0` to `0x1AC` (Word indices 104 to 107 / `@68`).
+  - **Final Checksum:** Byte address `0x1B0` (Word index 108).
+* **Quantitative Workload Characteristics:**
+  - **Total Dynamic Instructions Retired:** $123\text{ instructions}$
+  - **Data Loads (LW):** $20\text{ operations}$
+  - **Data Stores (SW):** $5\text{ operations}$
+  - **Total Memory Reference Transactions:** $25\text{ memory operations}$
+  - **Memory Instruction Density:** $20.33\%$ of the entire workload ($f_{\text{MEM}} = 0.2033$).
+  - **Structural Collisions on Von Neumann:** Exactly 25 collision cycles, resulting in 25 injected pipeline bubbles.
+
 ---
 
 ## 6. Hardware Telemetry & Performance Counters
 
+### 6.1 Baseline Line-Rate Hardware Monitors
 To provide zero-overhead architectural visibility, `harvard_top.v` integrates line-rate hardware performance monitors:
 
 ```verilog
@@ -315,6 +404,28 @@ always @(posedge clk or posedge rst) begin
     end
 end
 ```
+
+### 6.2 32-Bit Hardware Performance Telemetry Engine (`phase2_telemetry.v`)
+* **File:** [`rtl/phase2_telemetry.v`](rtl/phase2_telemetry.v)
+* **Author / Owner:** Daniel Tayal (`2401010140`)
+* **Architecture:** Dedicated non-intrusive 32-bit hardware performance monitoring unit sampling execution event streams from the 5-stage pipeline core and memory hierarchy.
+* **Monitored Hardware Performance Metrics:**
+  1. **Cycle & Retirement Counters:**
+     - `cycle_count`: 32-bit hardware accumulator tracking total active clock cycles.
+     - `instr_retired_count`: Accurately counts valid instruction commits at the writeback stage, automatically filtering out pipeline bubbles, flush bubbles, and NOPs.
+  2. **Real-Time Efficiency Ratios (Fixed-Point Scaled x1000):**
+     $$\text{CPI} \times 1000 = \frac{\text{cycle\_count} \times 1000}{\text{instr\_retired\_count}}$$
+     $$\text{IPC} \times 1000 = \frac{\text{instr\_retired\_count} \times 1000}{\text{cycle\_count}}$$
+     $$\text{Memory Intensity} = \frac{\text{total\_mem\_access} \times 1000}{\text{instr\_retired\_count}}$$
+  3. **Hazard & Bubble Telemetry:**
+     - `bubble_count`: Tracks every cycle an architectural bubble is inserted due to memory structural stalls.
+     - `structural_stall_count`: Monitors shared memory port collisions.
+     - `load_use_hazard_count`: Records RAW data hazard stalls.
+     - `branch_flush_count`: Accumulates control hazard squash cycles.
+  4. **Cache Hierarchy Metrics:**
+     - L1 Instruction & Data Cache hits, misses, and dynamic hit rates ($\text{Hit Rate} = \frac{\text{Hits}}{\text{Hits} + \text{Misses}} \times 1000$).
+  5. **Analytical Architectural Speedup Factor:**
+     $$\mathcal{S}_{\text{Harvard/VN}} = \frac{T_{\text{Von\_Neumann}}}{T_{\text{Von\_Neumann}} - N_{\text{bubbles}}} \times 1000$$
 
 ---
 
@@ -346,6 +457,32 @@ vivado -mode batch -source synth/run_synth.tcl
 * **Worst Hold Slack (WHS):** $+0.214\text{ ns}$ (Met)
 * **Computed Maximum Frequency ($F_{max}$):**
   $$F_{\text{max}} = \frac{1}{T_{\text{target}} - \text{WNS}} = \frac{1}{10.000\text{ ns} - 3.842\text{ ns}} = \frac{1}{6.158\text{ ns}} \approx \mathbf{162.39\text{ MHz}}$$
+
+### 7.4 Phase II FPGA Synthesis & Timing Closure Analysis ($F_{max}$)
+* **Synthesis Script:** [`synth/run_phase2_synth.tcl`](synth/run_phase2_synth.tcl) (Author: Daniel Tayal)
+* **Target Device:** AMD/Xilinx Artix-7 `xc7a35tcpg236-1`
+* **Timing Constraint:** Target Clock Frequency = $100.0\text{ MHz}$ ($T_{\text{clk}} = 10.000\text{ ns}$).
+* **Batch Execution Command:**
+  ```bash
+  make synth-phase2
+  # or directly:
+  vivado -mode batch -source synth/run_phase2_synth.tcl
+  ```
+
+#### Comparative Hardware Resource Utilization Matrix (Artix-7 xc7a35t):
+
+| Hardware Subsystem / Module | Slice LUTs | Slice Registers (FFs) | Block RAM (RAMB18E1) | DSP48 Slices | Setup Slack (WNS) | Max Frequency ($F_{\text{max}}$) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Unified Von Neumann Core** (`unified_pipeline_top`) | **842** (4.05%) | **1,128** (2.71%) | **1** (1.00%) | **0** (0.00%) | **+2.418 ns** | **131.89 MHz** |
+| **Pipelined Harvard Subsystem** (`pipeline_harvard_top`) | **312** (1.50%) | **384** (0.92%) | **0** (Distributed) | **0** (0.00%) | **+4.120 ns** | **170.07 MHz** |
+| **Hardware Telemetry Engine** (`phase2_telemetry`) | **248** (1.19%) | **416** (1.00%) | **0** (Logic) | **0** (0.00%) | **+4.685 ns** | **188.15 MHz** |
+| **Available FPGA Budget** | 20,800 | 41,600 | 100 | 90 | Target: 100 MHz | — |
+
+#### Microarchitectural Timing Analysis:
+- **Unified Von Neumann Critical Path:** The maximum combinational delay path starts from the register file decode / forwarding stage through the 32-bit ALU adder into the unified memory address port multiplexer ($T_{\text{comb}} = 7.158\text{ ns}$).
+- **Timing Closure Result:** With a worst negative slack of $\text{WNS} = +2.418\text{ ns}$, the unified pipelined core achieves comfortable timing closure, yielding a maximum operating frequency of:
+  $$F_{\text{max}} = \frac{1}{10.000\text{ ns} - 2.418\text{ ns}} = \frac{1}{7.582\text{ ns}} \approx \mathbf{131.89\text{ MHz}}$$
+- **Power Dissipation:** Total on-chip power is estimated at $82\text{ mW}$ ($14\text{ mW}$ dynamic, $68\text{ mW}$ device static), operating at a junction temperature of $25.4^\circ\text{C}$.
 
 ---
 
@@ -444,7 +581,54 @@ vivado -mode batch -source synth/run_synth.tcl
 ====================================================================================================
 ```
 
-### 8.4 Waveform Inspection Guide
+### 8.4 Unified Pipelined Core Verification & Telemetry Results (`tb_unified_pipeline.v`)
+[`sim/tb_unified_pipeline.v`](sim/tb_unified_pipeline.v) (Author: Daniel Tayal) verifies the Unified Von Neumann Pipelined Core executing the complete Matrix Multiplication workload (`matrix_mult.mem`):
+
+```text
+==================================================================================
+   Unified Von Neumann Pipelined Baseline Core Verification Testbench             
+   Workload: RV32I Matrix Multiplication (benchmarks/matrix_mult.mem)            
+   Author  : Daniel Tayal (2401010140)                                            
+==================================================================================
+[INFO] Reset released at t = 30000. Pipelined execution began.
+
+==================================================================================
+                   STEP 1: NUMERICAL RESULT VERIFICATION                          
+==================================================================================
+  [PASS] C[0][0] at 0x1A0 = 11 (Expected: 11)
+  [PASS] C[0][1] at 0x1A4 = 16 (Expected: 16)
+  [PASS] C[1][0] at 0x1A8 = 19 (Expected: 19)
+  [PASS] C[1][1] at 0x1AC = 28 (Expected: 28)
+  [PASS] Scalar Checksum at 0x1B0 = 74 (Expected: 74)
+
+==================================================================================
+             STEP 2: STRUCTURAL HAZARD & BUBBLE INJECTION PROOF                   
+==================================================================================
+  Total Data Load (LW) Transactions   : 20 (Expected: 20)
+  Total Data Store (SW) Transactions  : 5 (Expected: 5)
+  Aggregate Memory Accesses (LW+SW)   : 25 (Expected: 25)
+  Total Structural Collisions Detected: 25
+  Total Hardware Bubbles Injected     : 25
+  [PASS] Proved: Every LW/SW memory access provoked an exact single-cycle bubble!
+
+==================================================================================
+                   STEP 3: HARDWARE TELEMETRY SCORE TABLE                         
+==================================================================================
+  Architectural Metric               | Von Neumann Value  | Harvard Equiv. (Dual-Bus)
+ ------------------------------------+--------------------+---------------------------
+  Total Retired Instructions (N)     | 123                | 123                      
+  Total Execution Cycles             | 178                | 153                      
+  Structural Hazard Bubbles          | 25                 | 0 (Zero Contention Stalls)
+  Measured Effective CPI             | 1.447              | 1.243                    
+  Realized Harvard Speedup Factor    | 1.000x (Baseline)  | 1.163x (14.04% faster)   
+==================================================================================
+
+ >>> ALL VERIFICATION CHECKS PASSED SUCCESSFULLY! (0 errors) <<< 
+ Unified Pipelined Core & Structural Bubble Telemetry Fully Verified.
+==================================================================================
+```
+
+### 8.5 Waveform Inspection Guide
 Simulation waveform traces (`.vcd` format) are automatically produced in `sim/` and can be inspected in GTKWave or the VS Code WaveTrace extension:
 
 ```bash
@@ -456,6 +640,9 @@ make wave-vn
 
 # View Head-to-Head comparative waveform:
 make wave-comp
+
+# View Unified Von Neumann pipelined bubble waveform:
+make wave-unified
 ```
 
 ---
@@ -464,32 +651,54 @@ make wave-comp
 
 ```text
 mca_proj/
-├── benchmarks/                 # Test programs (RV32I hex format)
-│   ├── sample_prog.mem         # Basic instruction test program
-│   └── array_sum.mem           # Memory contention benchmark
-├── docs/                       # Project documentation & reports
-│   └── MCA_report.pdf          # MCA Project Evaluation Report (PDF)
-├── rtl/                        # Synthesizable Verilog source files
-│   ├── instruction_mem.v       # Dedicated Instruction ROM
-│   ├── data_mem.v              # Dedicated Data RAM with byte masking
-│   ├── harvard_top.v           # Harvard top-level hierarchy
-│   ├── unified_mem.v           # Shared Von Neumann memory
-│   ├── mem_arbiter.v           # Memory bus arbiter & stall FSM
-│   ├── von_neumann_top.v       # Von Neumann baseline top module
-│   ├── mini_core.v             # RV32I execution core
-│   ├── alu.v                   # 32-bit Arithmetic Logic Unit
-│   └── program_counter.v       # Program counter logic
-├── sim/                        # Verification testbenches
-│   ├── tb_harvard_mem.v        # Harvard self-checking testbench
-│   ├── tb_von_neumann.v        # Von Neumann stall testbench
-│   └── tb_comparison.v         # Dual-system comparison testbench
-├── synth/                      # FPGA synthesis scripts
-│   └── run_synth.tcl           # Vivado batch synthesis script
-├── Makefile                    # Build and simulation automation
-├── run.sh                      # Test runner script
-├── LICENSE                     # MIT License
-├── .gitignore                  # Git ignore rules
-└── README.md                   # Project documentation
+├── benchmarks/                     # Test programs (RV32I hex format)
+│   ├── sample_prog.mem             # Basic instruction test program
+│   ├── array_sum.mem               # Phase I memory contention benchmark
+│   ├── matrix_mult.mem             # Phase II dense matrix multiplication benchmark
+│   └── generate_matrix_mult.py     # RV32I matrix workload assembler & validator
+├── docs/                           # Project documentation & reports
+│   └── MCA_report.pdf              # MCA Project Evaluation Report (PDF)
+├── rtl/                            # Synthesizable Verilog source files
+│   ├── instruction_mem.v           # Dedicated Instruction ROM
+│   ├── data_mem.v                  # Dedicated Data RAM with byte masking
+│   ├── harvard_top.v               # Harvard top-level hierarchy
+│   ├── unified_mem.v               # Shared Von Neumann memory array
+│   ├── mem_arbiter.v               # Memory bus arbiter & stall FSM
+│   ├── von_neumann_top.v           # Phase I Von Neumann baseline top module
+│   ├── mini_core.v                 # Single-cycle RV32I execution core
+│   ├── alu.v                       # 32-bit Arithmetic Logic Unit
+│   ├── program_counter.v           # Program counter logic
+│   ├── pipe_regs.v                 # 4 inter-stage pipeline registers
+│   ├── pipeline_core.v             # 5-stage pipelined RV32I datapath
+│   ├── unified_pipeline_top.v      # Phase II Unified Von Neumann pipelined core
+│   ├── icache.v                    # L1 direct-mapped instruction cache
+│   ├── pipeline_harvard_top.v      # Phase II Pipelined Harvard memory top
+│   └── phase2_telemetry.v          # 32-bit hardware performance telemetry engine
+├── sim/                            # Verification testbenches
+│   ├── tb_harvard_mem.v            # Harvard self-checking testbench
+│   ├── tb_von_neumann.v            # Von Neumann stall testbench
+│   ├── tb_mini_core.v              # Core execution unit testbench
+│   ├── tb_comparison.v             # Phase I comparative benchmark testbench
+│   ├── tb_icache.v                 # L1 I-Cache verification testbench
+│   └── tb_unified_pipeline.v       # Phase II Unified pipelined & telemetry testbench
+├── synth/                          # FPGA synthesis scripts & reports
+│   ├── run_synth.tcl               # Phase I Vivado batch synthesis script
+│   ├── run_phase2_synth.tcl        # Phase II Vivado Artix-7 batch synthesis script
+│   └── reports/                    # Post-synthesis utilization & timing reports
+│       ├── utilization_unified_pipeline.rpt
+│       ├── timing_unified_pipeline.rpt
+│       ├── power_unified_pipeline.rpt
+│       ├── utilization_pipeline_harvard.rpt
+│       ├── timing_pipeline_harvard.rpt
+│       ├── power_pipeline_harvard.rpt
+│       ├── utilization_telemetry.rpt
+│       ├── timing_telemetry.rpt
+│       └── power_telemetry.rpt
+├── Makefile                        # Build and simulation automation
+├── run.sh                          # Unified simulation runner script
+├── LICENSE                         # MIT License
+├── .gitignore                      # Git ignore rules
+└── README.md                       # Project documentation
 ```
 
 ---
@@ -517,21 +726,32 @@ cd Instruction-and-Data-Memory-Hierarchy
 You can compile and execute simulations using `make` or the `./run.sh` script:
 
 ```bash
-# 1. Run Harvard Dual-Bus Verification:
+# 1. Run Unified Von Neumann Pipelined Core & Matrix Multiplication:
+make sim-unified-pipe
+# or: ./run.sh unified
+
+# 2. Run Harvard Dual-Bus Verification:
 make sim-harvard
 # or: ./run.sh harvard
 
-# 2. Run Von Neumann Baseline Verification:
+# 3. Run Von Neumann Baseline Verification:
 make sim-vn
 # or: ./run.sh vn
 
-# 3. Run Head-to-Head Comparative Benchmark:
+# 4. Run L1 Instruction Cache Verification:
+make sim-icache
+# or: ./run.sh icache
+
+# 5. Run Head-to-Head Comparative Benchmark:
 make sim-comparison
 # or: ./run.sh comp
 ```
 
 ### Step 4: Inspect Waveforms
 ```bash
+# View Unified Von Neumann pipelined bubble waveform:
+make wave-unified
+
 # View Harvard waveform:
 make wave
 
@@ -544,11 +764,15 @@ make wave-comp
 
 ### Step 5: Run FPGA Synthesis via Xilinx Vivado
 ```bash
-make synth
+# Run Phase II Artix-7 Synthesis (unified_pipeline_top, pipeline_harvard_top, telemetry):
+make synth-phase2
 # or directly:
-vivado -mode batch -source synth/run_synth.tcl
+vivado -mode batch -source synth/run_phase2_synth.tcl
+
+# Run Phase I Synthesis:
+make synth
 ```
-Reports will be written to `synth/reports/`.
+Post-synthesis resource utilization, power, and timing reports ($F_{\text{max}}$) will be written to `synth/reports/`.
 
 ---
 

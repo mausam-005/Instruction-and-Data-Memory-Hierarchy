@@ -17,6 +17,7 @@ sim/sim_*
 *.hw/
 *.ip_user_files/
 *.rpt
+!synth/reports/*.rpt
 *.dcp
 *.bit
 

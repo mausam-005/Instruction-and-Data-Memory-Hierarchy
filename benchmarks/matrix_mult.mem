@@ -1,0 +1,115 @@
+// =============================================================================
+// Benchmark Program: matrix_mult.mem
+// Project: Instruction and Data Memory Hierarchy (Phase II)
+// Author : Daniel Tayal (2401010140)
+// Description:
+//   Memory-intensive 2x2 Matrix Multiplication (C = A x B) RV32I benchmark.
+//   Stresses memory hierarchy bandwidth through repeated data loads (LW),
+//   interleaved arithmetic accumulation, and result stores (SW).
+//
+// Mathematical Model:
+//   A = [ 2  3 ]   (Addresses 0x180..0x18C, word indices 96..99 / @60)
+//       [ 4  5 ]
+//   B = [ 1  2 ]   (Addresses 0x190..0x19C, word indices 100..103 / @64)
+//       [ 3  4 ]
+//
+// Expected Computed Matrix C:
+//   C = [ 11  16 ]  C[0][0]=2*1+3*3=11 (0x0B) at 0x1A0 (word 104 / @68)
+//       [ 19  28 ]  C[0][1]=2*2+3*4=16 (0x10) at 0x1A4 (word 105)
+//                   C[1][0]=4*1+5*3=19 (0x13) at 0x1A8 (word 106)
+//                   C[1][1]=4*2+5*4=28 (0x1C) at 0x1AC (word 107)
+//   Checksum sum(C) = 11 + 16 + 19 + 28 = 74 (0x4A) at 0x1B0 (word 108)
+// =============================================================================
+
+// Instruction Memory Section: RV32I Machine Code (Addresses 0x000 to 0x10C)
+@00
+18000093 // 0x00: addi x1, x0, 384    // x1 = 0x180 (Matrix A base pointer)
+19000113 // 0x04: addi x2, x0, 400    // x2 = 0x190 (Matrix B base pointer)
+1a000193 // 0x08: addi x3, x0, 416    // x3 = 0x1A0 (Matrix C base pointer)
+0000a203 // 0x0C: lw   x4, 0(x1)      // Load A[0][0] = 2
+00012283 // 0x10: lw   x5, 0(x2)      // Load B[0][0] = 1
+00000393 // 0x14: addi x7, x0, 0      // C[0][0] acc = 0
+00500863 // 0x18: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 1
+004383b3 // 0x1C: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0x20: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0x24: jal  x0, -12        // Repeat mult loop 1
+0040a203 // 0x28: lw   x4, 4(x1)      // Load A[0][1] = 3
+00812283 // 0x2C: lw   x5, 8(x2)      // Load B[1][0] = 3
+00500863 // 0x30: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 2
+004383b3 // 0x34: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0x38: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0x3C: jal  x0, -12        // Repeat mult loop 2
+0071a023 // 0x40: sw   x7, 0(x3)      // Store C[0][0] = 11 to 0x1A0
+0000a203 // 0x44: lw   x4, 0(x1)      // Load A[0][0] = 2
+00412283 // 0x48: lw   x5, 4(x2)      // Load B[0][1] = 2
+00000393 // 0x4C: addi x7, x0, 0      // C[0][1] acc = 0
+00500863 // 0x50: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 3
+004383b3 // 0x54: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0x58: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0x5C: jal  x0, -12        // Repeat mult loop 3
+0040a203 // 0x60: lw   x4, 4(x1)      // Load A[0][1] = 3
+00c12283 // 0x64: lw   x5, 12(x2)     // Load B[1][1] = 4
+00500863 // 0x68: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 4
+004383b3 // 0x6C: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0x70: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0x74: jal  x0, -12        // Repeat mult loop 4
+0071a223 // 0x78: sw   x7, 4(x3)      // Store C[0][1] = 16 to 0x1A4
+0080a203 // 0x7C: lw   x4, 8(x1)      // Load A[1][0] = 4
+00012283 // 0x80: lw   x5, 0(x2)      // Load B[0][0] = 1
+00000393 // 0x84: addi x7, x0, 0      // C[1][0] acc = 0
+00500863 // 0x88: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 5
+004383b3 // 0x8C: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0x90: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0x94: jal  x0, -12        // Repeat mult loop 5
+00c0a203 // 0x98: lw   x4, 12(x1)     // Load A[1][1] = 5
+00812283 // 0x9C: lw   x5, 8(x2)      // Load B[1][0] = 3
+00500863 // 0xA0: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 6
+004383b3 // 0xA4: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0xA8: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0xAC: jal  x0, -12        // Repeat mult loop 6
+0071a423 // 0xB0: sw   x7, 8(x3)      // Store C[1][0] = 19 to 0x1A8
+0080a203 // 0xB4: lw   x4, 8(x1)      // Load A[1][0] = 4
+00412283 // 0xB8: lw   x5, 4(x2)      // Load B[0][1] = 2
+00000393 // 0xBC: addi x7, x0, 0      // C[1][1] acc = 0
+00500863 // 0xC0: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 7
+004383b3 // 0xC4: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0xC8: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0xCC: jal  x0, -12        // Repeat mult loop 7
+00c0a203 // 0xD0: lw   x4, 12(x1)     // Load A[1][1] = 5
+00c12283 // 0xD4: lw   x5, 12(x2)     // Load B[1][1] = 4
+00500863 // 0xD8: beq  x5, x0, 16     // If B_elem == 0 exit mult loop 8
+004383b3 // 0xDC: add  x7, x7, x4     // acc += A_elem
+fff28293 // 0xE0: addi x5, x5, -1     // B_elem--
+ff5ff06f // 0xE4: jal  x0, -12        // Repeat mult loop 8
+0071a623 // 0xE8: sw   x7, 12(x3)     // Store C[1][1] = 28 to 0x1AC
+0001a203 // 0xEC: lw   x4, 0(x3)      // Read back C[0][0]
+0041a283 // 0xF0: lw   x5, 4(x3)      // Read back C[0][1]
+005205b3 // 0xF4: add x11, x4, x5    // x11 = C[0][0] + C[0][1]
+0081a203 // 0xF8: lw   x4, 8(x3)      // Read back C[1][0]
+004585b3 // 0xFC: add x11, x11, x4  // x11 += C[1][0]
+00c1a283 // 0x100: lw   x5, 12(x3)     // Read back C[1][1]
+005585b3 // 0x104: add x11, x11, x5  // x11 += C[1][1]
+00b1a823 // 0x108: sw   x11, 16(x3)    // Store checksum (74 = 0x4A) to 0x1B0
+0000006f // 0x10C: jal  x0, 0          // Infinite loop / halt execution
+
+// Data Memory Section: Matrix A (2x2) at Word Index 96 (Byte Address 0x180)
+@60
+00000002 // 0x180: A[0][0] = 2
+00000003 // 0x184: A[0][1] = 3
+00000004 // 0x188: A[1][0] = 4
+00000005 // 0x18C: A[1][1] = 5
+
+// Data Memory Section: Matrix B (2x2) at Word Index 100 (Byte Address 0x190)
+@64
+00000001 // 0x190: B[0][0] = 1
+00000002 // 0x194: B[0][1] = 2
+00000003 // 0x198: B[1][0] = 3
+00000004 // 0x19C: B[1][1] = 4
+
+// Data Memory Section: Matrix C (2x2) Storage at Word Index 104 (Byte Address 0x1A0)
+@68
+00000000 // 0x1A0: C[0][0] result placeholder (Expected: 11 = 0x0000000B)
+00000000 // 0x1A4: C[0][1] result placeholder (Expected: 16 = 0x00000010)
+00000000 // 0x1A8: C[1][0] result placeholder (Expected: 19 = 0x00000013)
+00000000 // 0x1AC: C[1][1] result placeholder (Expected: 28 = 0x0000001C)
+00000000 // 0x1B0: Checksum result placeholder (Expected: 74 = 0x0000004A)

@@ -1,14 +1,25 @@
 #!/bin/bash
 # ==============================================================================
 # Simulation runner script: Instruction and Data Memory Hierarchy
-# Usage: ./run.sh [harvard | vn | comp | core | icache]
+# Usage: ./run.sh [harvard | vn | comp | core | icache | unified]
 # ==============================================================================
 set -e
 
 MODE=${1:-harvard}
 mkdir -p sim
 
-if [ "$MODE" == "vn" ]; then
+if [ "$MODE" == "unified" ] || [ "$MODE" == "pipe" ]; then
+    echo "===> Compiling & Running Unified Von Neumann Pipelined Core Simulation..."
+    iverilog -g2012 -o sim/sim_unified_pipe \
+        rtl/pipe_regs.v \
+        rtl/alu.v \
+        rtl/pipeline_core.v \
+        rtl/unified_mem.v \
+        rtl/phase2_telemetry.v \
+        rtl/unified_pipeline_top.v \
+        sim/tb_unified_pipeline.v
+    vvp sim/sim_unified_pipe
+elif [ "$MODE" == "vn" ]; then
     echo "===> Compiling & Running Von Neumann Baseline Simulation..."
     iverilog -g2012 -o sim/sim_vn \
         rtl/mem_arbiter.v \
