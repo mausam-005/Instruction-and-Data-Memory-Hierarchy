@@ -14,7 +14,7 @@
 //      on RV32I execution cores across both memory organizations.
 //   3. Measures and quantifies:
 //      - Total Execution Cycles (Cycles_Harvard vs. Cycles_VN)
-//      - Total Structural Stalls Incurred (0 stalls vs. N contention stalls)
+//      - Harvard concurrency and Von Neumann single-port serialization stalls
 //      - Measured and Analytical Cycles Per Instruction (CPI)
 //      - Realized Architectural Speedup Factor S = Cycles_VN / Cycles_Harvard
 //      - Final accumulated sum verification (address 0x60 = 36 = 0x24)
@@ -241,6 +241,7 @@ module tb_comparison;
     integer vn_completed    = 0;
     integer h_exec_cycles   = 0;
     integer vn_exec_cycles  = 0;
+    integer vn_core_stall_cycles = 0;
     integer h_mem_accesses  = 0;
     integer vn_mem_accesses = 0;
 
@@ -264,6 +265,8 @@ module tb_comparison;
             vn_exec_cycles = vn_exec_cycles + 1;
             if (!vn_core_stall) begin
                 vn_instructions = vn_instructions + 1;
+            end else begin
+                vn_core_stall_cycles = vn_core_stall_cycles + 1;
             end
             if (vn_grant_data && (vn_mem_data_read_en || vn_mem_data_write_en)) begin
                 vn_mem_accesses = vn_mem_accesses + 1;
@@ -307,7 +310,7 @@ module tb_comparison;
         $display("====================================================================================================");
         $display("  Workload Program       : benchmarks/array_sum.mem");
         $display("  Simulation Clock Target: 100.00 MHz (Clock Period = %0d ns)", CLK_PERIOD);
-        $display("  Benchmark Description  : RV32I 8-Word Array Accumulation with Back-to-Back LW Memory Contention");
+        $display("  Benchmark Description  : RV32I 8-Word Array Accumulation with Single-Port Data Serialization");
         $display("----------------------------------------------------------------------------------------------------\n");
 
         // Apply Synchronous Reset Sequence
@@ -357,6 +360,24 @@ module tb_comparison;
             $display("  [PASS] Register x3 accumulator verified across both cores: x3 = 36 (0x00000024)");
         end
 
+        if (h_simultaneous_access_count != h_mem_accesses) begin
+            $display("  [FAIL] Harvard concurrent-access count mismatch! Expected %0d, measured %0d",
+                     h_mem_accesses, h_simultaneous_access_count);
+            verification_errors = verification_errors + 1;
+        end else begin
+            $display("  [PASS] Harvard concurrent accesses verified: %0d", h_simultaneous_access_count);
+        end
+
+        if (vn_core_stall_cycles != vn_mem_accesses ||
+            vn_exec_cycles - vn_instructions != vn_core_stall_cycles) begin
+            $display("  [FAIL] Von Neumann serialization accounting mismatch! Stalls=%0d, data ops=%0d, extra cycles=%0d",
+                     vn_core_stall_cycles, vn_mem_accesses, vn_exec_cycles - vn_instructions);
+            verification_errors = verification_errors + 1;
+        end else begin
+            $display("  [PASS] Von Neumann serialization verified: %0d extra cycles for %0d data operations",
+                     vn_core_stall_cycles, vn_mem_accesses);
+        end
+
         // Calculate Analytical Performance Figures
         cpi_harvard       = $itor(h_exec_cycles) / $itor(h_instructions);
         cpi_vn            = $itor(vn_exec_cycles) / $itor(vn_instructions);
@@ -375,8 +396,9 @@ module tb_comparison;
         $display("----------------------------------------------------------------------------------------------------");
         $display(" %-32s | %-24d | %-24d | %-16s", "Total Instructions Retired (N)", h_instructions, vn_instructions, "Identical Trace");
         $display(" %-32s | %-24d | %-24d | +%-14s", "Total Execution Cycles", h_exec_cycles, vn_exec_cycles, $sformatf("%0d cycles", vn_exec_cycles - h_exec_cycles));
-        $display(" %-32s | %-24d | %-24d | %-16s", "Arbitration Stalls Incurred", 0, vn_stall_count, $sformatf("%0d stalls", vn_stall_count));
-        $display(" %-32s | %-24d | %-24d | %-16s", "Memory Structural Collisions", 0, vn_contention_count, $sformatf("%0d collisions", vn_contention_count));
+        $display(" %-32s | %-24d | %-24d | %-16s", "Single-Port Serialization Cycles", 0, vn_core_stall_cycles, $sformatf("+%0d cycles", vn_core_stall_cycles));
+        $display(" %-32s | %-24d | %-24d | %-16s", "Arbiter Stall Cycles", 0, vn_stall_count, $sformatf("%0d cycles", vn_stall_count));
+        $display(" %-32s | %-24d | %-24d | %-16s", "Arbiter Contention Events", 0, vn_contention_count, $sformatf("%0d events", vn_contention_count));
         $display(" %-32s | %-24d | %-24d | %-16s", "Instruction Fetch Count", h_total_fetch_count, vn_total_fetch_count, "100.0% Served");
         $display(" %-32s | %-24d | %-24d | %-16s", "Data Memory Operations (LW/SW)", h_mem_accesses, vn_mem_accesses, "8 LW + 1 SW");
         $display(" %-32s | %-24d | %-24s | %-16s", "Concurrent Dual Access Cycles", h_simultaneous_access_count, "0 (Serialized Port)", "+9 Concurrent");
@@ -391,10 +413,12 @@ module tb_comparison;
         $display("\n====================================================================================================");
         $display("                                  ARCHITECTURAL VERDICT & FINDINGS                                  ");
         $display("====================================================================================================");
-        $display("  1. Harvard Architecture sustained an ideal CPI of %0.4f by completely decoupling Instruction and", cpi_harvard);
-        $display("     Data memory buses, executing all 9 simultaneous fetch+data transactions with ZERO stall cycles.");
-        $display("  2. Von Neumann Architecture suffered exactly %0d structural hazard stall cycles due to single-port", vn_stall_count);
-        $display("     bus arbitration contention, raising its effective CPI to %0.4f.", cpi_vn);
+        $display("  1. Harvard achieved CPI %0.4f and %0d concurrent fetch+data cycles with no serialization stalls.",
+                 cpi_harvard, h_simultaneous_access_count);
+        $display("  2. Von Neumann incurred %0d serialization cycles for %0d data operations, raising CPI to %0.4f.",
+                 vn_core_stall_cycles, vn_mem_accesses, cpi_vn);
+        $display("     Arbiter overlap counters are %0d because this benchmark schedules shared-port requests sequentially.",
+                 vn_contention_count);
         $display("  3. Realized Speedup factor S = %0d / %0d = %0.4fx (%0.2f%% execution time reduction).",
                  vn_exec_cycles, h_exec_cycles, speedup, latency_reduction);
         $display("  4. Waveform output written to 'sim/comparison.vcd' for GTKWave visualization.");

@@ -645,7 +645,9 @@ vivado -mode batch -source synth/run_synth.tcl
 ----------------------------------------------------------------------------------------------------
  Total Instructions Retired (N)   | 33                       | 33                       | Identical Trace 
  Total Execution Cycles           | 33                       | 42                       | +9 cycles      
- Memory Structural Collisions     | 0                        | 9                        | +9 collisions   
+ Single-Port Serialization Cycles | 0                        | 9                        | +9 cycles
+ Arbiter Stall Cycles             | 0                        | 0                        | 0 cycles
+ Arbiter Contention Events        | 0                        | 0                        | 0 events
  Data Memory Operations (LW/SW)   | 9                        | 9                        | 8 LW + 1 SW     
  Concurrent Dual Access Cycles    | 9                        | 0 (Serialized Port)      | +9 Concurrent   
  Cycles Per Instruction (CPI)     | 1.0000                   | 1.2727                   | -0.2727 CPI     
@@ -655,6 +657,8 @@ vivado -mode batch -source synth/run_synth.tcl
  Result Integrity (Addr 0x60)     | 36 (0x24) [PASS]         | 36 (0x24) [PASS]         | 0 Corruption    
 ====================================================================================================
 ```
+
+The comparison harness services the Von Neumann data operation in a separate cycle, so it records nine single-port serialization cycles but no same-cycle arbiter collisions. The independent arbiter collision and stall behavior is verified in `tb_von_neumann.v`.
 
 ### 8.4 Unified Pipelined Core Verification & Telemetry Results (`tb_unified_pipeline.v`)
 [`sim/tb_unified_pipeline.v`](sim/tb_unified_pipeline.v) (Author: Daniel Tayal) verifies the Unified Von Neumann Pipelined Core executing the complete Matrix Multiplication workload (`matrix_mult.mem`):
