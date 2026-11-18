@@ -1,18 +1,32 @@
 #!/bin/bash
 # ==============================================================================
 # Simulation runner script: Instruction and Data Memory Hierarchy
-# Usage: ./run.sh [harvard | vn | comp | core | icache | unified]
+# Usage: ./run.sh [harvard | pipe-harvard | vn | comp | core | icache | unified]
 # ==============================================================================
 set -e
 
-MODE=${1:-harvard}
+MODE=${1:-pipe-harvard}
 mkdir -p sim
 
-if [ "$MODE" == "unified" ] || [ "$MODE" == "pipe" ]; then
+if [ "$MODE" == "pipe-harvard" ] || [ "$MODE" == "harvard-pipe" ]; then
+    echo "===> Compiling & Running Pipelined Harvard Subsystem Simulation (Role 4)..."
+    iverilog -g2012 -o sim/sim_pipeline_harvard \
+        rtl/pipe_regs.v \
+        rtl/alu.v \
+        rtl/hazard_unit.v \
+        rtl/forwarding_unit.v \
+        rtl/pipeline_core.v \
+        rtl/instruction_mem.v \
+        rtl/data_mem.v \
+        sim/tb_pipeline_harvard.v
+    vvp sim/sim_pipeline_harvard
+elif [ "$MODE" == "unified" ] || [ "$MODE" == "pipe" ]; then
     echo "===> Compiling & Running Unified Von Neumann Pipelined Core Simulation..."
     iverilog -g2012 -o sim/sim_unified_pipe \
         rtl/pipe_regs.v \
         rtl/alu.v \
+        rtl/hazard_unit.v \
+        rtl/forwarding_unit.v \
         rtl/pipeline_core.v \
         rtl/unified_mem.v \
         rtl/phase2_telemetry.v \

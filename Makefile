@@ -13,26 +13,28 @@ SIM_DIR   = sim
 SYNTH_DIR = synth
 BENCH_DIR = benchmarks
 
-.PHONY: all help sim-harvard sim-vn sim-core sim-comparison sim-icache sim-unified-pipe wave wave-vn wave-core wave-comp wave-unified synth synth-phase2 clean
+.PHONY: all help sim-harvard sim-vn sim-core sim-comparison sim-icache sim-unified-pipe sim-pipeline-harvard wave wave-vn wave-core wave-comp wave-unified wave-pipeline-harvard synth synth-phase2 clean
 
-all: sim-harvard
+all: sim-pipeline-harvard
 
 help:
 	@echo "Available build and simulation targets:"
-	@echo "  make sim-harvard      : Compile & simulate Harvard memory hierarchy"
-	@echo "  make sim-vn           : Compile & simulate Von Neumann baseline"
-	@echo "  make sim-core         : Compile & simulate RV32I execution engine datapath"
-	@echo "  make sim-comparison   : Run head-to-head comparison benchmark"
-	@echo "  make sim-icache       : Compile & simulate L1 Instruction Cache testbench"
-	@echo "  make sim-unified-pipe : Compile & simulate Unified Von Neumann Pipelined Core"
-	@echo "  make wave             : Open Harvard simulation waveform in GTKWave"
-	@echo "  make wave-vn          : Open Von Neumann simulation waveform in GTKWave"
-	@echo "  make wave-core        : Open Core unit simulation waveform in GTKWave"
-	@echo "  make wave-comp        : Open comparison waveform in GTKWave"
-	@echo "  make wave-unified     : Open Unified Pipelined Core waveform in GTKWave"
-	@echo "  make synth            : Run Phase I FPGA synthesis via Xilinx Vivado (batch mode)"
-	@echo "  make synth-phase2     : Run Phase II FPGA synthesis via Xilinx Vivado (batch mode)"
-	@echo "  make clean            : Remove simulation build outputs and dumps"
+	@echo "  make sim-pipeline-harvard : Compile & simulate Pipelined Harvard Core & Hazard Suite (Role 4)"
+	@echo "  make sim-harvard          : Compile & simulate Harvard memory hierarchy"
+	@echo "  make sim-vn               : Compile & simulate Von Neumann baseline"
+	@echo "  make sim-core             : Compile & simulate RV32I execution engine datapath"
+	@echo "  make sim-comparison       : Run head-to-head comparison benchmark"
+	@echo "  make sim-icache           : Compile & simulate L1 Instruction Cache testbench"
+	@echo "  make sim-unified-pipe     : Compile & simulate Unified Von Neumann Pipelined Core"
+	@echo "  make wave-pipeline-harvard: Open Harvard Pipelined simulation waveform in GTKWave"
+	@echo "  make wave                 : Open Harvard simulation waveform in GTKWave"
+	@echo "  make wave-vn              : Open Von Neumann simulation waveform in GTKWave"
+	@echo "  make wave-core            : Open Core unit simulation waveform in GTKWave"
+	@echo "  make wave-comp            : Open comparison waveform in GTKWave"
+	@echo "  make wave-unified         : Open Unified Pipelined Core waveform in GTKWave"
+	@echo "  make synth                : Run Phase I FPGA synthesis via Xilinx Vivado (batch mode)"
+	@echo "  make synth-phase2         : Run Phase II FPGA synthesis via Xilinx Vivado (batch mode)"
+	@echo "  make clean                : Remove simulation build outputs and dumps"
 
 sim-harvard:
 	@mkdir -p $(SIM_DIR)
@@ -88,12 +90,30 @@ sim-unified-pipe:
 	$(IVERILOG) -g2012 -o $(SIM_DIR)/sim_unified_pipe \
 		$(RTL_DIR)/pipe_regs.v \
 		$(RTL_DIR)/alu.v \
+		$(RTL_DIR)/hazard_unit.v \
+		$(RTL_DIR)/forwarding_unit.v \
 		$(RTL_DIR)/pipeline_core.v \
 		$(RTL_DIR)/unified_mem.v \
 		$(RTL_DIR)/phase2_telemetry.v \
 		$(RTL_DIR)/unified_pipeline_top.v \
 		$(SIM_DIR)/tb_unified_pipeline.v
 	$(VVP) $(SIM_DIR)/sim_unified_pipe
+
+sim-pipeline-harvard:
+	@mkdir -p $(SIM_DIR)
+	$(IVERILOG) -g2012 -o $(SIM_DIR)/sim_pipeline_harvard \
+		$(RTL_DIR)/pipe_regs.v \
+		$(RTL_DIR)/alu.v \
+		$(RTL_DIR)/hazard_unit.v \
+		$(RTL_DIR)/forwarding_unit.v \
+		$(RTL_DIR)/pipeline_core.v \
+		$(RTL_DIR)/instruction_mem.v \
+		$(RTL_DIR)/data_mem.v \
+		$(SIM_DIR)/tb_pipeline_harvard.v
+	$(VVP) $(SIM_DIR)/sim_pipeline_harvard
+
+wave-pipeline-harvard:
+	$(GTKWAVE) $(SIM_DIR)/pipeline_harvard.vcd &
 
 wave:
 	$(GTKWAVE) $(SIM_DIR)/harvard_mem.vcd &

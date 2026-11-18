@@ -58,6 +58,8 @@
    - [4.6 5-Stage Pipelined RV32I Processor Core (`pipeline_core.v`, `pipe_regs.v`)](#46-5-stage-pipelined-rv32i-processor-core-pipeline_corev-pipe_regsv)
    - [4.7 Unified Von Neumann Pipelined Baseline Core (`unified_pipeline_top.v`)](#47-unified-von-neumann-pipelined-baseline-core-unified_pipeline_topv)
    - [4.8 L1 Instruction Cache & Pipelined Harvard Subsystem (`icache.v`, `pipeline_harvard_top.v`)](#48-l1-instruction-cache--pipelined-harvard-subsystem-icachev-pipeline_harvard_topv)
+   - [4.9 Pipeline Hazard Detection & Flow Management Unit (`hazard_unit.v`)](#49-pipeline-hazard-detection--flow-management-unit-hazard_unitv)
+   - [4.10 ALU Operand Forwarding & Bypass Subsystem (`forwarding_unit.v`)](#410-alu-operand-forwarding--bypass-subsystem-forwarding_unitv)
 5. [Workloads & Verification Benchmark Programs](#5-workloads--verification-benchmark-programs)
    - [5.1 Verification Sequence (`sample_prog.mem`)](#51-verification-sequence-sample_progmem)
    - [5.2 Memory Contention Benchmark (`array_sum.mem`)](#52-memory-contention-benchmark-array_summem)
@@ -75,7 +77,8 @@
    - [8.2 Von Neumann Baseline Verification (`tb_von_neumann.v`)](#82-von-neumann-baseline-verification-tb_von_neumannv)
    - [8.3 Head-to-Head Comparative Benchmark (`tb_comparison.v`)](#83-head-to-head-comparative-benchmark-tb_comparisonv)
    - [8.4 Unified Pipelined Core Verification & Telemetry Results (`tb_unified_pipeline.v`)](#84-unified-pipelined-core-verification--telemetry-results-tb_unified_pipelinev)
-   - [8.5 Waveform Inspection Guide](#85-waveform-inspection-guide)
+   - [8.5 Pipelined Harvard Core & Hazard Verification Suite (`tb_pipeline_harvard.v`)](#85-pipelined-harvard-core--hazard-verification-suite-tb_pipeline_harvardv)
+   - [8.6 Waveform Inspection Guide](#86-waveform-inspection-guide)
 9. [Repository Layout & Artifact Manifest](#9-repository-layout--artifact-manifest)
 10. [Installation, Reproduction & Simulation Guide](#10-installation-reproduction--simulation-guide)
 11. [Academic Integrity, References & License](#11-academic-integrity-references--license)
@@ -326,6 +329,78 @@ In the Harvard architecture, address lines directly feed independent memory addr
 ### 4.8 L1 Instruction Cache & Pipelined Harvard Subsystem (`icache.v`, `pipeline_harvard_top.v`)
 * **Files:** [`rtl/icache.v`](rtl/icache.v), [`rtl/pipeline_harvard_top.v`](rtl/pipeline_harvard_top.v)
 * Direct-mapped 4-word line burst refill cache resolving instruction access latency, fully integrated into the Harvard split-bus memory hierarchy.
+
+### 4.9 Pipeline Hazard Detection & Flow Management Unit (`hazard_unit.v`)
+* **File:** [`rtl/hazard_unit.v`](rtl/hazard_unit.v)
+* **Author / Owner:** Arun Kumar Giri (`2401010099`) — Role 4 Specialist
+* **Microarchitecture & Responsibilities:**
+  1. **Load-Use Data Hazard Detection:**
+     - Monitors memory read requests in the EX stage (`ex_mem_read`) and detects when the loaded destination register (`ex_rd != 0`) matches an active source register (`id_rs1` or `id_rs2`) in the Decode stage.
+     - When detected, injects an exact single-cycle pipeline bubble:
+       $$\text{stall\_pc} = 1, \quad \text{stall\_if\_id} = 1, \quad \text{flush\_id\_ex} = 1$$
+       This freezes the PC and IF/ID register, clears the ID/EX control signals with a NOP bubble (`addi x0, x0, 0`), and allows the older LOAD instruction to advance to the MEM stage and retrieve the operand.
+  2. **Opcode-Aware Operand Usage Decoding:**
+     - Prevents false load-use stalls by inspecting `id_opcode`. In RISC-V RV32I, I-type instructions (`ADDI`, `SLTI`, etc.) and LOAD instructions place immediate bits `imm[4:0]` in instruction bits `[24:20]`.
+     - The hazard unit decodes whether `rs1` and `rs2` are genuinely read by the instruction opcode:
+       $$\text{rs1\_used} \in \{\text{R-type}, \text{I-type}, \text{LOAD}, \text{STORE}, \text{BRANCH}, \text{JALR}\}$$
+       $$\text{rs2\_used} \in \{\text{R-type}, \text{STORE}, \text{BRANCH}\}$$
+       Immediate bits in `[24:20]` for `ADDI` or `LW` are never falsely flagged as `rs2` register hazards.
+  3. **Multi-Cycle Cache Miss / Memory Stall Freezing:**
+     - Monitors L1 I-Cache miss bursts (`icache_stall`), L1 D-Cache refills (`dcache_stall`), and external memory waits (`ext_stall`).
+     - Freezes all 5 pipeline stage registers (`PC`, `IF/ID`, `ID/EX`, `EX/MEM`, `MEM/WB`) synchronously without flushing in-flight state.
+  4. **Control Hazard Resolution:**
+     - Flushes speculative instructions in `IF/ID` and `ID/EX` (`flush_if_id = 1`, `flush_id_ex = 1`) on branch evaluation or jump redirection (`ex_branch_taken`).
+
+```
+                PIPELINE HAZARD DETECTION UNIT (hazard_unit.v)
+
+        [ ID Stage: Opcode, rs1, rs2 ]    [ EX Stage: MemRead, rd ]
+                       │                              │
+                       ▼                              ▼
+        ┌─────────────────────────────────────────────────────────┐
+        │            OPCODE-AWARE LOAD-USE DETECTOR               │
+        │   rs1_haz = rs1_used && (id_rs1 != 0) && (ex_rd == id_rs1)│
+        │   rs2_haz = rs2_used && (id_rs2 != 0) && (ex_rd == id_rs2)│
+        │   load_use = ex_mem_read && (rs1_haz || rs2_haz)       │
+        └────────────────────────────┬────────────────────────────┘
+                                     │
+           ┌─────────────────────────┼─────────────────────────┐
+           ▼                         ▼                         ▼
+   [ Freeze PC: stall_pc ]  [ Freeze IF/ID: stall_if_id ] [ Bubble: flush_id_ex ]
+```
+
+### 4.10 ALU Operand Forwarding & Bypass Subsystem (`forwarding_unit.v`)
+* **File:** [`rtl/forwarding_unit.v`](rtl/forwarding_unit.v)
+* **Author / Owner:** Arun Kumar Giri (`2401010099`) — Role 4 Specialist
+* **Microarchitecture & Forwarding Policy:**
+  - Implements full operand bypassing directly from the `EX/MEM` and `MEM/WB` stages into the `EX` stage ALU inputs (`alu_in_a`, `alu_in_b`), eliminating data hazard stalls for back-to-back arithmetic instructions.
+  - **Distance 1 Bypass (EX/MEM -> EX, Code `2'b10`):**
+    Triggered when `mem_reg_write && (mem_rd != 0) && (mem_rd == ex_rs)`.
+    Bypasses the ALU result, formatted memory data, or return link ($PC+4$).
+  - **Distance 2 Bypass (MEM/WB -> EX, Code `2'b01`):**
+    Triggered when `wb_reg_write && (wb_rd != 0) && (wb_rd == ex_rs)`.
+    Bypasses the final committed writeback data (`wb_reg_wdata`).
+  - **Temporal Priority Resolution:**
+    When both `EX/MEM` and `MEM/WB` write to the same destination register, `EX/MEM` (the most recent instruction) is strictly prioritized over `MEM/WB`.
+  - **Register x0 Hardwiring:**
+    Writes to `x0` (`5'd0`) are hardwired to zero and never forwarded (`forward = 2'b00`).
+  - **Store Data Forwarding:**
+    Provides forwarded `fwd_store_data` to ensure `SW`, `SH`, and `SB` instructions store the freshly computed register values directly from earlier pipeline stages.
+
+```
+                 ALU OPERAND FORWARDING NETWORK (forwarding_unit.v)
+
+        [ EX/MEM Result ] ───────────────┐ (Distance 1: Code 2'b10)
+        [ MEM/WB Data   ] ────────┐      │ (Distance 2: Code 2'b01)
+        [ RegFile Read  ] ──┐     │      │ (Default   : Code 2'b00)
+                            ▼     ▼      ▼
+                      ┌──────────────────────┐
+                      │ 3-to-1 Forward Mux A │ ──► [ ALU Input A ]
+                      └──────────────────────┘
+                      ┌──────────────────────┐
+                      │ 3-to-1 Forward Mux B │ ──► [ ALU Input B / Store Data ]
+                      └──────────────────────┘
+```
 
 ---
 
@@ -628,10 +703,114 @@ vivado -mode batch -source synth/run_synth.tcl
 ==================================================================================
 ```
 
-### 8.5 Waveform Inspection Guide
+### 8.5 Pipelined Harvard Core & Hazard Verification Suite (`tb_pipeline_harvard.v`)
+* **File:** [`sim/tb_pipeline_harvard.v`](sim/tb_pipeline_harvard.v)
+* **Author / Owner:** Arun Kumar Giri (`2401010099`) — Role 4 Specialist
+* **Verification Scope & Test Plan:**
+  - Automated self-checking verification suite executing 10 microarchitectural phases:
+    1. **Reset & Register Initialization:** Verifies reset PC alignment (`0x00000000`) and de-assertion of stall controls.
+    2. **RAW Distance 1 Hazard Forwarding (EX/MEM -> EX):** Validates back-to-back zero-stall ALU result bypassing (`forward_a = 2'b10`).
+    3. **RAW Distance 2 Hazard Forwarding (MEM/WB -> EX):** Validates zero-stall bypassing across 1 intervening instruction (`forward_b = 2'b01`).
+    4. **Forwarding Priority Resolution & x0 Invariance:** Proves younger `EX/MEM` producer overrides older `MEM/WB` producer; verifies writes to `x0` never cause forwarding.
+    5. **Load-Use Data Hazard Detection:** Verifies exact single-cycle bubble injection on LOAD-to-ALU dependencies (`stall_pc = 1`, `stall_if_id = 1`, `flush_id_ex = 1`).
+    6. **Opcode-Aware False Hazard Immunity:** Proves I-type immediate bits in `[24:20]` do NOT trigger spurious stalls.
+    7. **Multi-Cycle Cache Miss Pipeline Freeze:** Verifies all 5 stage registers hold state synchronously during cache burst line refills.
+    8. **Control Hazard Resolution:** Verifies branch taken squashes speculative `IF/ID` and `ID/EX` stages.
+    9. **Full Harvard Pipelined Program Execution:** Executes `benchmarks/array_sum.mem` with dual concurrent memory paths, proving final accumulated sum ($36$ / `0x24`) at memory address `0x60`.
+    10. **Harvard Concurrency Telemetry:** Verifies `simultaneous_access_count > 0` and 0 structural stalls incurred across the entire run.
+
+```text
+==================================================================================
+   Pipelined Harvard Memory Subsystem & Hazard/Forwarding Verification Suite      
+   Specialist: Arun Kumar Giri (2401010099) — Role 4                             
+   Modules   : rtl/hazard_unit.v, rtl/forwarding_unit.v, rtl/pipeline_core.v      
+==================================================================================
+
+[TEST 1] Verifying Reset & Architectural Register Initialization...
+  [PASS] Reset PC initialized to 0x00000000 : Actual = 0x00000000 (0)
+  [PASS] ext_stall initialized low : Actual = 0x00000000 (0)
+  [PASS] stall_fetch initialized low (Harvard split bus) : Actual = 0x00000000 (0)
+
+[TEST 2] Verifying RAW Distance 1 Hazard Forwarding (EX/MEM -> EX)...
+  [PASS] forward_a code set to 2'b10 (EX/MEM) : Actual = 0x00000002 (2)
+  [PASS] fwd_val_a routed from EX/MEM ALU result : Actual = 0xcafe0001 (3405643777)
+  [PASS] forward_b code set to 2'b00 (No hazard on rs2) : Actual = 0x00000000 (0)
+  [PASS] fwd_val_b retains original rs2 data : Actual = 0x22222222 (572662306)
+
+[TEST 3] Verifying RAW Distance 2 Hazard Forwarding (MEM/WB -> EX)...
+  [PASS] forward_a code set to 2'b00 (No hazard on rs1) : Actual = 0x00000000 (0)
+  [PASS] forward_b code set to 2'b01 (MEM/WB) : Actual = 0x00000001 (1)
+  [PASS] fwd_val_b routed from MEM/WB writeback data : Actual = 0xdeadbeef (3735928559)
+
+[TEST 4] Verifying Forwarding Priority (EX/MEM over MEM/WB) & x0 Invariance...
+  [PASS] forward_a prioritized EX/MEM over MEM/WB (2'b10) : Actual = 0x00000002 (2)
+  [PASS] fwd_val_a took younger EX/MEM value : Actual = 0x11112222 (286335522)
+  [PASS] forward_a is 2'b00: writes to x0 never cause forwarding : Actual = 0x00000000 (0)
+
+[TEST 5] Verifying Load-Use Hazard Detection & 1-Cycle Bubble Injection...
+  [PASS] load_use_hazard asserted on dependent R-type read
+  [PASS] stall_pc asserted (Freeze PC)
+  [PASS] stall_if_id asserted (Freeze IF/ID)
+  [PASS] flush_id_ex asserted (Inject bubble into EX)
+  [PASS] stall_id_ex not asserted (EX advances to MEM)
+
+[TEST 6] Verifying Opcode-Aware False Hazard Immunity (Immediate Bits Ignored)...
+  [PASS] load_use_hazard is 0 (False hazard correctly suppressed)
+  [PASS] stall_pc is 0 (Pipeline runs without unnecessary stall)
+  [PASS] flush_id_ex is 0 (No bubble injected)
+
+[TEST 7] Verifying Multi-Cycle Cache Miss Pipeline Freeze...
+  [PASS] pipeline_freeze asserted during cache burst refill
+  [PASS] stall_pc asserted (PC frozen)
+  [PASS] stall_if_id asserted (IF/ID frozen)
+  [PASS] stall_id_ex asserted (ID/EX frozen)
+  [PASS] stall_ex_mem asserted (EX/MEM frozen)
+  [PASS] stall_mem_wb asserted (MEM/WB frozen)
+  [PASS] flush_id_ex is 0 (No state wiped during cache freeze)
+
+[TEST 8] Verifying Control Hazard Resolution & Speculative Squashing...
+  [PASS] control_hazard asserted on branch taken in EX
+  [PASS] flush_if_id asserted (Squash speculative IF/ID)
+  [PASS] flush_id_ex asserted (Squash speculative ID/EX)
+
+[TEST 9] Executing Pipelined Harvard Benchmark (benchmarks/array_sum.mem)...
+         Preloaded: Dedicated Instruction ROM (0x00..0x2C) & Data RAM (0x40..0x5C)
+  [INFO] Core reset released at t = 50000 ps. Pipelined Harvard execution active.
+  [PASS] Memory at 0x60 contains final array sum 36 (0x24) : Actual = 0x00000024 (36)
+
+[TEST 10] Validating Harvard Concurrency & Architectural Speedup...
+  [PASS] simultaneous_access_count > 0 (Dual-bus concurrency verified)
+  [PASS] Executed at least 8 LW and 1 SW transactions
+
+==================================================================================
+                   AUTOMATED PERFORMANCE TELEMETRY SCORE TABLE                    
+                     Harvard Dual-Bus vs. Von Neumann Baseline                    
+==================================================================================
+  Architectural Metric               | Harvard Architecture | Von Neumann Baseline
+ ------------------------------------+----------------------+---------------------
+  Total Dynamic Retired Instructions | 28                   | 28                  
+  Total Execution Clock Cycles       | 47                   | 56                  
+  Structural Arbitration Stalls      | 0                    | 9                   
+  Concurrent Dual Access Cycles      | 9                    | 0                   
+  RAW Load-Use Hazard Stalls         | 0                    | 0                   
+  Branch Control Squashes            | 6                    | 6                   
+  Effective Cycles Per Instr (CPI)   | 1.678                | 2.000
+  Relative Harvard Speedup Factor    | 1.191x (Faster)      | 1.000x (Baseline)
+==================================================================================
+
+ >>> ALL 10 VERIFICATION TESTS PASSED SUCCESSFULLY! (0 ERRORS) <<< 
+ Pipeline Hazards, Forwarding & Harvard Dual-Bus Independence Verified.
+ Author: Arun Kumar Giri (2401010099) — Role 4 Specialist Signed Off.
+==================================================================================
+```
+
+### 8.6 Waveform Inspection Guide
 Simulation waveform traces (`.vcd` format) are automatically produced in `sim/` and can be inspected in GTKWave or the VS Code WaveTrace extension:
 
 ```bash
+# View Pipelined Harvard hazard & forwarding waveform (Role 4):
+make wave-pipeline-harvard
+
 # View Harvard dual-bus waveform:
 make wave
 
@@ -669,7 +848,11 @@ mca_proj/
 │   ├── alu.v                       # 32-bit Arithmetic Logic Unit
 │   ├── program_counter.v           # Program counter logic
 │   ├── pipe_regs.v                 # 4 inter-stage pipeline registers
+│   ├── hazard_unit.v               # Pipeline hazard detection & freeze unit (Role 4)
+│   ├── forwarding_unit.v           # ALU operand forwarding / bypass unit (Role 4)
 │   ├── pipeline_core.v             # 5-stage pipelined RV32I datapath
+│   ├── dcache.v                    # L1 direct-mapped data cache with byte masking
+│   ├── cache_arbiter.v             # Burst-refill cache bus arbiter
 │   ├── unified_pipeline_top.v      # Phase II Unified Von Neumann pipelined core
 │   ├── icache.v                    # L1 direct-mapped instruction cache
 │   ├── pipeline_harvard_top.v      # Phase II Pipelined Harvard memory top
@@ -680,7 +863,9 @@ mca_proj/
 │   ├── tb_mini_core.v              # Core execution unit testbench
 │   ├── tb_comparison.v             # Phase I comparative benchmark testbench
 │   ├── tb_icache.v                 # L1 I-Cache verification testbench
-│   └── tb_unified_pipeline.v       # Phase II Unified pipelined & telemetry testbench
+│   ├── tb_dcache.v                 # L1 D-Cache & arbiter verification testbench
+│   ├── tb_unified_pipeline.v       # Phase II Unified pipelined & telemetry testbench
+│   └── tb_pipeline_harvard.v       # Phase II Pipelined Harvard & hazard testbench (Role 4)
 ├── synth/                          # FPGA synthesis scripts & reports
 │   ├── run_synth.tcl               # Phase I Vivado batch synthesis script
 │   ├── run_phase2_synth.tcl        # Phase II Vivado Artix-7 batch synthesis script

@@ -92,15 +92,28 @@ module pipeline_core #(
     wire        ex_branch_taken;   // Asserted on branch condition true or jump in EX
     wire [31:0] branch_target_ex;  // Calculated branch/jump redirection target
 
-    wire stall_pc     = stall || stall_hazard || stall_fetch;
-    wire stall_if_id  = (stall || stall_hazard) && !stall_fetch;
-    wire flush_if_id  = ex_branch_taken || stall_fetch;
-    wire stall_id_ex  = stall;
-    wire flush_id_ex  = stall_hazard || ex_branch_taken;
-    wire stall_ex_mem = stall;
-    wire flush_ex_mem = 1'b0;
-    wire stall_mem_wb = stall;
-    wire flush_mem_wb = 1'b0;
+    wire        stall_pc;
+    wire        stall_if_id;
+    wire        flush_if_id;
+    wire        stall_id_ex;
+    wire        flush_id_ex;
+    wire        stall_ex_mem;
+    wire        flush_ex_mem;
+    wire        stall_mem_wb;
+    wire        flush_mem_wb;
+
+    // Declarations from later stages needed for early hazard/forwarding feedback
+    wire        ex_mem_read;
+    wire [4:0]  ex_rd;
+    wire        mem_reg_write;
+    wire [4:0]  mem_rd;
+    wire [31:0] mem_alu_result;
+    wire [31:0] mem_pc_plus4;
+    wire [1:0]  mem_wb_sel;
+    reg  [31:0] mem_formatted_rdata;
+    wire        wb_reg_write;
+    wire [4:0]  wb_rd;
+    wire [31:0] wb_reg_wdata;
 
     // =========================================================================
     // STAGE 1: INSTRUCTION FETCH (IF)
@@ -152,6 +165,34 @@ module pipeline_core #(
     wire [4:0] id_rs2    = id_instr[24:20];
     wire [6:0] id_funct7 = id_instr[31:25];
 
+    // -------------------------------------------------------------------------
+    // Instantiate Pipeline Hazard Detection Unit (Authored by Arun Kumar Giri)
+    // -------------------------------------------------------------------------
+    hazard_unit u_hazard_unit (
+        .id_opcode          (id_opcode),
+        .id_rs1             (id_rs1),
+        .id_rs2             (id_rs2),
+        .ex_mem_read        (ex_mem_read),
+        .ex_rd              (ex_rd),
+        .ex_branch_taken    (ex_branch_taken),
+        .icache_stall       (1'b0),
+        .dcache_stall       (1'b0),
+        .ext_stall          (stall),
+        .stall_fetch        (stall_fetch),
+        .stall_pc           (stall_pc),
+        .stall_if_id        (stall_if_id),
+        .stall_id_ex        (stall_id_ex),
+        .stall_ex_mem       (stall_ex_mem),
+        .stall_mem_wb       (stall_mem_wb),
+        .flush_if_id        (flush_if_id),
+        .flush_id_ex        (flush_id_ex),
+        .flush_ex_mem       (flush_ex_mem),
+        .flush_mem_wb       (flush_mem_wb),
+        .load_use_hazard    (stall_hazard),
+        .pipeline_freeze    (),
+        .control_hazard     ()
+    );
+
     // 32 x 32-bit Register File
     reg [31:0] regfile [0:31];
     integer r_idx;
@@ -160,11 +201,6 @@ module pipeline_core #(
             regfile[r_idx] = 32'd0;
         end
     end
-
-    // Writeback declarations from Stage 5
-    wire        wb_reg_write;
-    wire [4:0]  wb_rd;
-    wire [31:0] wb_reg_wdata;
 
     // Synchronous writeback commit (with x0 modification protection)
     always @(posedge clk or posedge rst) begin
@@ -330,13 +366,6 @@ module pipeline_core #(
         endcase
     end
 
-    // Load-Use Data Hazard Detection
-    // Occurs when instruction in EX stage is a LOAD and writes to rs1 or rs2 of instruction in ID
-    wire ex_mem_read;
-    wire [4:0] ex_rd;
-    assign stall_hazard = ex_mem_read && (ex_rd != 5'd0) &&
-                          ((ex_rd == id_rs1) || (ex_rd == id_rs2));
-
     // ID/EX Pipeline Register Instance
     wire [31:0] ex_pc;
     wire [31:0] ex_pc_plus4;
@@ -407,53 +436,35 @@ module pipeline_core #(
     // =========================================================================
     // STAGE 3: EXECUTION & ADDRESS CALCULATION (EX)
     // =========================================================================
-    // Declarations from MEM Stage for Forwarding
-    wire        mem_reg_write;
-    wire [4:0]  mem_rd;
-    wire [31:0] mem_alu_result;
+    wire [1:0]  forward_a;
+    wire [1:0]  forward_b;
+    wire [31:0] fwd_val_a;
+    wire [31:0] fwd_val_b;
+    wire [31:0] ex_store_data;
 
-    // ALU Operand A Forwarding Unit
-    reg [1:0] forward_a;
-    always @(*) begin
-        if (mem_reg_write && (mem_rd != 5'd0) && (mem_rd == ex_rs1)) begin
-            forward_a = 2'b10; // Forward from EX/MEM stage
-        end else if (wb_reg_write && (wb_rd != 5'd0) && (wb_rd == ex_rs1)) begin
-            forward_a = 2'b01; // Forward from MEM/WB stage
-        end else begin
-            forward_a = 2'b00; // No forwarding
-        end
-    end
-
-    // ALU Operand B Forwarding Unit
-    reg [1:0] forward_b;
-    always @(*) begin
-        if (mem_reg_write && (mem_rd != 5'd0) && (mem_rd == ex_rs2)) begin
-            forward_b = 2'b10; // Forward from EX/MEM stage
-        end else if (wb_reg_write && (wb_rd != 5'd0) && (wb_rd == ex_rs2)) begin
-            forward_b = 2'b01; // Forward from MEM/WB stage
-        end else begin
-            forward_b = 2'b00; // No forwarding
-        end
-    end
-
-    // Forwarded Value Selection for Operand A and B
-    reg [31:0] fwd_val_a;
-    always @(*) begin
-        case (forward_a)
-            2'b10:   fwd_val_a = mem_alu_result;
-            2'b01:   fwd_val_a = wb_reg_wdata;
-            default: fwd_val_a = ex_rs1_data;
-        endcase
-    end
-
-    reg [31:0] fwd_val_b;
-    always @(*) begin
-        case (forward_b)
-            2'b10:   fwd_val_b = mem_alu_result;
-            2'b01:   fwd_val_b = wb_reg_wdata;
-            default: fwd_val_b = ex_rs2_data;
-        endcase
-    end
+    // -------------------------------------------------------------------------
+    // Instantiate ALU Forwarding / Bypass Unit (Authored by Arun Kumar Giri)
+    // -------------------------------------------------------------------------
+    forwarding_unit u_forwarding_unit (
+        .ex_rs1         (ex_rs1),
+        .ex_rs2         (ex_rs2),
+        .ex_rs1_data    (ex_rs1_data),
+        .ex_rs2_data    (ex_rs2_data),
+        .mem_reg_write  (mem_reg_write),
+        .mem_rd         (mem_rd),
+        .mem_alu_result (mem_alu_result),
+        .mem_rdata      (mem_formatted_rdata),
+        .mem_pc_plus4   (mem_pc_plus4),
+        .mem_wb_sel     (mem_wb_sel),
+        .wb_reg_write   (wb_reg_write),
+        .wb_rd          (wb_rd),
+        .wb_reg_wdata   (wb_reg_wdata),
+        .forward_a      (forward_a),
+        .forward_b      (forward_b),
+        .fwd_val_a      (fwd_val_a),
+        .fwd_val_b      (fwd_val_b),
+        .fwd_store_data (ex_store_data)
+    );
 
     // ALU Final Input Multiplexing
     reg [31:0] alu_in_a;
@@ -506,17 +517,12 @@ module pipeline_core #(
     // Branch / Jump Target Address Calculation
     assign branch_target_ex = (ex_jalr) ? ((fwd_val_a + ex_imm) & 32'hFFFFFFFE) : (ex_pc + ex_imm);
 
-    // Store data to be passed to MEM stage (uses forwarded register 2 value)
-    wire [31:0] ex_store_data = fwd_val_b;
-
     // EX/MEM Pipeline Register Instance
     wire [31:0] mem_pc;
-    wire [31:0] mem_pc_plus4;
     wire [31:0] mem_rs2_data;
     wire [2:0]  mem_funct3;
     wire        mem_mem_read;
     wire        mem_mem_write;
-    wire [1:0]  mem_wb_sel;
 
     pipe_reg_ex_mem u_pipe_ex_mem (
         .clk            (clk),
@@ -595,7 +601,6 @@ module pipeline_core #(
     assign dmem_wdata       = dmem_wdata_comb;
 
     // Load Data Sign-Extension & Formatting (LB, LH, LW, LBU, LHU)
-    reg [31:0] mem_formatted_rdata;
     always @(*) begin
         case (mem_funct3)
             3'b000: begin // LB: Load Byte (signed)

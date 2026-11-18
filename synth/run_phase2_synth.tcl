@@ -25,6 +25,8 @@ puts ""
 puts "===> [1/3] Adding Unified Von Neumann Pipelined RTL source files..."
 read_verilog -sv ./rtl/pipe_regs.v
 read_verilog -sv ./rtl/alu.v
+read_verilog -sv ./rtl/hazard_unit.v
+read_verilog -sv ./rtl/forwarding_unit.v
 read_verilog -sv ./rtl/pipeline_core.v
 read_verilog -sv ./rtl/unified_mem.v
 read_verilog -sv ./rtl/phase2_telemetry.v
