@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101522">
+  <title>Memory Hierarchy Simulation Lab</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Memory Hierarchy Lab home">
+      <span class="brand-mark">M</span>
+      <span>Memory Hierarchy <span class="brand-muted">/ Lab</span></span>
+    </a>
+    <div class="topbar-right">
+      <span class="local-pill"><span class="live-dot"></span> LOCAL SIMULATOR</span>
+      <span class="tool-pill">Icarus Verilog</span>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="intro">
+      <div>
+        <p class="eyebrow">INSTRUCTION AND DATA MEMORY HIERARCHY</p>
+        <h1>Simulation lab</h1>
+        <p class="intro-copy">Run the memory tests, compare architectures, and inspect signal timing in one place.</p>
+      </div>
+      <div class="intro-stat">
+        <span class="stat-indicator"></span>
+        <div><strong>Local-only</strong><small>Runs on this machine</small></div>
+      </div>
+    </section>
+
+    <section class="architecture-panel panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">SYSTEM OVERVIEW</p>
+          <h2>Independent instruction and data paths</h2>
+        </div>
+        <span class="tag tag-purple">HARVARD ARCHITECTURE</span>
+      </div>
+      <div class="architecture-diagram" role="img" aria-label="Processor connects to separate instruction and data memories">
+        <div class="diagram-node cpu-node">
+          <span class="node-icon">CPU</span>
+          <strong>Processor</strong>
+          <small>PC / Decode / Execute / Control</small>
+        </div>
+        <div class="bus bus-instruction">
+          <span class="bus-title">INSTRUCTION BUS</span>
+          <span class="bus-detail">PC address / instruction read / I-decode</span>
+          <span class="bus-line"></span>
+          <span class="bus-arrow">›</span>
+        </div>
+        <div class="bus bus-data">
+          <span class="bus-title">DATA BUS</span>
+          <span class="bus-detail">Address / read / write / byte enables / D-decode</span>
+          <span class="bus-line"></span>
+          <span class="bus-arrow">›</span>
+        </div>
+        <div class="diagram-node memory-node instruction-node">
+          <span class="node-icon">I</span>
+          <strong>Instruction Memory</strong>
+          <small>ROM · read-only fetch path</small>
+        </div>
+        <div class="diagram-node memory-node data-node">
+          <span class="node-icon">D</span>
+          <strong>Data Memory</strong>
+          <small>RAM · load / store path</small>
+        </div>
+      </div>
+      <div class="architecture-foot">
+        <span><i class="legend-dot instruction-dot"></i> Dedicated instruction memory</span>
+        <span><i class="legend-dot data-dot"></i> Dedicated data memory</span>
+        <span class="concurrency-note">Both paths can be accessed in the same cycle</span>
+      </div>
+      <div class="component-grid">
+        <article class="component-card">
+          <span class="component-index">01</span>
+          <div><strong>Program Counter</strong><small>Supplies the next instruction address.</small></div>
+        </article>
+        <article class="component-card">
+          <span class="component-index">02</span>
+          <div><strong>Address Decoder</strong><small>Maps each byte address to its memory word.</small></div>
+        </article>
+        <article class="component-card">
+          <span class="component-index">03</span>
+          <div><strong>Read / Write Control</strong><small>Instruction reads; data reads, writes, and byte masks.</small></div>
+        </article>
+        <article class="component-card">
+          <span class="component-index">04</span>
+          <div><strong>Shared-Memory Baseline</strong><small>Von Neumann RAM and arbiter for comparison.</small></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel comparison-panel">
+      <div class="section-heading comparison-heading">
+        <div>
+          <p class="eyebrow">ARCHITECTURE COMPARISON</p>
+          <h2>Harvard vs Von Neumann</h2>
+        </div>
+        <span class="tag tag-neutral">ARRAY_SUM BENCHMARK</span>
+      </div>
+      <div class="architecture-cards">
+        <article class="architecture-card harvard-card">
+          <div class="architecture-card-title"><span class="architecture-mark">H</span><strong>Harvard</strong></div>
+          <p>Separate instruction and data memories with independent buses.</p>
+          <ul>
+            <li>Instruction fetch and data access can overlap.</li>
+            <li>No shared-port serialization in this benchmark.</li>
+          </ul>
+        </article>
+        <article class="architecture-card von-card">
+          <div class="architecture-card-title"><span class="architecture-mark">V</span><strong>Von Neumann</strong></div>
+          <p>Instruction and data transactions share one memory port.</p>
+          <ul>
+            <li>Fetch and load/store are serviced in separate cycles.</li>
+            <li>Shared-bus arbiter behavior is available as a test target.</li>
+          </ul>
+        </article>
+      </div>
+      <div class="benchmark-table-wrap">
+        <table class="benchmark-table">
+          <thead><tr><th>Measured metric</th><th>Harvard</th><th>Von Neumann</th></tr></thead>
+          <tbody>
+            <tr><td>Execution cycles</td><td>33</td><td>42</td></tr>
+            <tr><td>CPI</td><td>1.0000</td><td>1.2727</td></tr>
+            <tr><td>Concurrent I/D accesses</td><td>9 cycles</td><td>0 (serialized)</td></tr>
+            <tr><td>Single-port serialization cycles</td><td>0</td><td>9</td></tr>
+            <tr><td>Final array sum</td><td>36</td><td>36</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="benchmark-footnote">Measured with <code>benchmarks/array_sum.mem</code> at a 10 ns simulation clock. Values describe this workload, not a universal performance guarantee.</p>
+    </section>
+
+    <section class="workspace-grid">
+      <div class="panel simulation-panel">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">TESTBENCH CONTROL</p>
+            <h2>Choose a simulation</h2>
+          </div>
+          <span class="step-number">01</span>
+        </div>
+
+        <label class="field-label" for="simulation-select">Simulation target</label>
+        <select id="simulation-select" class="simulation-select" disabled>
+          <option>Loading simulations...</option>
+        </select>
+        <p id="simulation-description" class="simulation-description">Loading project targets...</p>
+
+        <div class="run-row">
+          <button id="run-button" class="run-button" type="button" disabled>
+            <span class="play-icon" aria-hidden="true">▶</span>
+            <span>Run simulation</span>
+          </button>
+          <span id="run-status" class="run-status">Ready</span>
+        </div>
+
+        <div class="target-meta">
+          <span class="meta-label">MAKE TARGET</span>
+          <code id="make-target">—</code>
+        </div>
+
+        <div class="comparison-note">
+          <span class="note-icon">i</span>
+          <p>Only predefined project targets are available. The dashboard does not accept shell commands.</p>
+        </div>
+      </div>
+
+      <div class="panel results-panel">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">LATEST RUN</p>
+            <h2>Simulation output</h2>
+          </div>
+          <span id="result-badge" class="tag tag-neutral">NO RUN YET</span>
+        </div>
+        <div id="result-summary" class="result-summary">
+          <span class="summary-icon">⌁</span>
+          <span>Run a testbench to see its results and build output here.</span>
+        </div>
+        <pre id="simulation-output" class="simulation-output" aria-live="polite">Waiting for a simulation...</pre>
+      </div>
+    </section>
+
+    <section class="panel waveform-panel">
+      <div class="section-heading waveform-heading">
+        <div>
+          <p class="eyebrow">TIMING INSPECTION</p>
+          <h2>Waveform viewer</h2>
+          <p class="section-copy">Select signals from the generated VCD and compare their values over simulation time.</p>
+        </div>
+        <div class="wave-actions">
+          <button id="load-waveform" class="secondary-button" type="button" disabled>Load waveform</button>
+          <a id="download-waveform" class="text-link disabled-link" aria-disabled="true">Download VCD</a>
+        </div>
+      </div>
+
+      <div id="wave-empty" class="wave-empty">
+        <div class="wave-empty-icon">〰</div>
+        <strong>No waveform loaded</strong>
+        <span>Run a simulation, then load its VCD trace.</span>
+      </div>
+      <div id="wave-content" class="wave-content" hidden>
+        <div class="signal-sidebar">
+          <div class="signal-sidebar-heading">
+            <span>SIGNALS</span>
+            <span id="signal-count">0 selected</span>
+          </div>
+          <div id="signal-list" class="signal-list"></div>
+        </div>
+        <div class="wave-chart-wrap">
+          <div id="wave-info" class="wave-info"></div>
+          <div id="wave-chart" class="wave-chart"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Instruction and Data Memory Hierarchy</span>
+      <span>Verilog simulation frontend · no external services</span>
+    </footer>
+  </main>
+</body>
+</html>

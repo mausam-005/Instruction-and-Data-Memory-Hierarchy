@@ -834,6 +834,11 @@ make wave-unified
 
 ```text
 mca_proj/
+├── frontend/                       # Local browser dashboard for simulations
+│   ├── server.py                   # Loopback-only API and fixed Make target runner
+│   ├── index.html                  # Dashboard interface
+│   ├── app.css                     # Dashboard styling
+│   └── app.js                      # Simulation controls and VCD viewer
 ├── benchmarks/                     # Test programs (RV32I hex format)
 │   ├── sample_prog.mem             # Basic instruction test program
 │   ├── array_sum.mem               # Phase I memory contention benchmark
@@ -935,6 +940,13 @@ make sim-icache
 make sim-comparison
 # or: ./run.sh comp
 ```
+
+### Optional: Local Browser Dashboard
+With Python 3, GNU Make, and Icarus Verilog installed, start the local dashboard:
+```bash
+python3 frontend/server.py
+```
+Open `http://127.0.0.1:8765`, select a predefined simulation, and click **Run simulation**. The page shows the split Harvard paths, PC/address-decode/read-write roles, and measured array-sum comparison against the shared-memory baseline. The dashboard displays test output and can render or download the generated VCD waveform. It binds to loopback only and accepts only the repository's fixed simulation targets. Press `Ctrl+C` in the terminal to stop it.
 
 ### Step 4: Inspect Waveforms
 ```bash

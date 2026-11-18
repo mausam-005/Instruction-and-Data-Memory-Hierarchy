@@ -26,6 +26,8 @@ sim/sim_*
 *.swp
 *~
 .vscode/
+__pycache__/
+*.py[cod]
 
 # LaTeX temp files
 *.aux
