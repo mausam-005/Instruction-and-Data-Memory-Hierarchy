@@ -26,15 +26,49 @@
 
 ---
 
-### 📋 Team Members
+### 📋 Team Members & Engineering Roles
 
-| Student Name | Enrollment Number | Institutional Email |
-| :--- | :---: | :--- |
-| **Mausam Kumar Dwivedi** | `2401010266` | [mausam.dwivedi2024@nst.rishihood.edu.in](mailto:mausam.dwivedi2024@nst.rishihood.edu.in) |
-| **Krish Dabas** | `2401010233` | [krish.dabas2024@nst.rishihood.edu.in](mailto:krish.dabas2024@nst.rishihood.edu.in) |
-| **Arun Kumar Giri** | `2401010099` | [arun.giri2024@nst.rishihood.edu.in](mailto:arun.giri2024@nst.rishihood.edu.in) |
-| **Ritik Atri** | `2401010386` | [ritik.attri2024@nst.rishihood.edu.in](mailto:ritik.attri2024@nst.rishihood.edu.in) |
-| **Daniel Tayal** | `2401010140` | [daniel.tayal2024@nst.rishihood.edu.in](mailto:daniel.tayal2024@nst.rishihood.edu.in) |
+| Role | Student Name | Enrollment Number | Institutional Email | Primary Ownership |
+| :--- | :--- | :---: | :--- | :--- |
+| **Role 1 — Lead Architect** | **Mausam Kumar Dwivedi** | `2401010266` | [mausam.dwivedi2024@nst.rishihood.edu.in](mailto:mausam.dwivedi2024@nst.rishihood.edu.in) | `rtl/icache.v`, `rtl/pipeline_harvard_top.v`, `sim/tb_icache.v` |
+| **Role 2 — Memory Arbitration & D-Cache** | **Krish Dabas** | `2401010233` | [krish.dabas2024@nst.rishihood.edu.in](mailto:krish.dabas2024@nst.rishihood.edu.in) | `rtl/dcache.v`, `rtl/cache_arbiter.v`, `sim/tb_dcache.v` |
+| **Role 3 — CPU Datapath & Pipeline** | **Ritik Atri** | `2401010386` | [ritik.attri2024@nst.rishihood.edu.in](mailto:ritik.attri2024@nst.rishihood.edu.in) | `rtl/pipe_regs.v`, `rtl/pipeline_core.v` |
+| **Role 4 — Hazards, Forwarding & Verification** | **Arun Kumar Giri** | `2401010099` | [arun.giri2024@nst.rishihood.edu.in](mailto:arun.giri2024@nst.rishihood.edu.in) | `rtl/hazard_unit.v`, `rtl/forwarding_unit.v`, `sim/tb_pipeline_harvard.v` |
+| **Role 5 — Unified Baseline, Benchmarks & Synthesis** | **Daniel Tayal** | `2401010140` | [daniel.tayal2024@nst.rishihood.edu.in](mailto:daniel.tayal2024@nst.rishihood.edu.in) | `rtl/unified_pipeline_top.v`, `rtl/phase2_telemetry.v`, `benchmarks/matrix_mult.mem`, `synth/` |
+
+---
+
+#### 🛠️ Subsystem Breakdown by Member
+
+* **Role 1 — Lead Architect & L1 Instruction Cache Specialist**  
+  *Teammate Name:* **Mausam Kumar Dwivedi** (`2401010266`) *(Team Lead)*  
+  *Ownership:* `rtl/icache.v`, `rtl/pipeline_harvard_top.v`, `sim/tb_icache.v`, `rtl/instruction_mem.v`, `rtl/data_mem.v`, `rtl/harvard_top.v`  
+  *What you build:*  
+  Design the synthesizable L1 Instruction Cache supporting 16-byte cache lines, single-cycle hit path, tag comparators, and burst line-fill FSM. Architect and integrate the complete Pipelined Harvard memory subsystem, connecting the L1 I-Cache, decoupled D-Cache interface, and pipeline stall controls, while leading the overall system architecture, memory hierarchy design, and verification.
+
+* **Role 2 — Memory Arbitration & L1 Data Cache Specialist**  
+  *Teammate Name:* **Krish Dabas** (`2401010233`)  
+  *Ownership:* `rtl/dcache.v`, `rtl/cache_arbiter.v`, `sim/tb_dcache.v`  
+  *What you build:*  
+  Design the synthesizable L1 Data Cache supporting 4-bit byte-enable write masking for RV32I store instructions (SB, SH, SW) with write-through memory consistency and dirty/valid tracking. Implement the Burst-Refill Cache Arbiter FSM that serializes, arbitrates, and services multi-cycle line refills from both I-Cache and D-Cache to the underlying unified memory whenever simultaneous cache misses occur.
+
+* **Role 3 — 5-Stage CPU Pipelined Datapath & Control Engineer**  
+  *Teammate Name:* **Ritik Atri** (`2401010386`)  
+  *Ownership:* `rtl/pipe_regs.v`, `rtl/pipeline_core.v`  
+  *What you build:*  
+  Design the four synchronous inter-stage Pipeline Registers (IF/ID, ID/EX, EX/MEM, MEM/WB) equipped with active-high stall-freeze and bubble-flush controls. Implement the complete 5-Stage Pipelined RV32I Datapath connecting instruction fetch, register decode with 32 general-purpose registers, ALU execution, memory access, and register writeback into a continuous 5-stage execution stream.
+
+* **Role 4 — Pipeline Hazards, Forwarding & Verification Specialist**  
+  *Teammate Name:* **Arun Kumar Giri** (`2401010099`)  
+  *Ownership:* `rtl/hazard_unit.v`, `rtl/forwarding_unit.v`, `sim/tb_pipeline_harvard.v`  
+  *What you build:*  
+  Implement the Pipeline Hazard Detection Unit to detect Load-Use data dependencies (inserting 1-cycle pipeline bubbles) and freeze the entire pipeline during cache miss line refills. Build the ALU Operand Forwarding / Bypass Unit to route computed results directly from EX/MEM and MEM/WB stages back into ALU inputs, eliminating data stalls for back-to-back arithmetic instructions. Write the automated verification testbench for pipeline hazard verification.
+
+* **Role 5 — Unified Baseline, Advanced Benchmarks & Synthesis Lead**  
+  *Teammate Name:* **Daniel Tayal** (`2401010140`)  
+  *Ownership:* `rtl/unified_pipeline_top.v`, `rtl/phase2_telemetry.v`, `benchmarks/matrix_mult.mem`, `synth/run_phase2_synth.tcl`  
+  *What you build:*  
+  Implement the Unified Von Neumann Pipelined Baseline Core where Fetch and Memory stages compete for a single shared memory port, proving structural stalls by inserting pipeline bubbles on every LW/SW. Develop memory-intensive RV32I workloads (Matrix Multiplication), build the 32-bit Hardware Performance Telemetry Engine (tracking CPI, cache hits/misses, bubbles, and speedup), and execute Xilinx Vivado Artix-7 batch synthesis to extract hardware resource utilization and maximum clock frequency ($F_{\text{max}}$).
 
 ---
 
