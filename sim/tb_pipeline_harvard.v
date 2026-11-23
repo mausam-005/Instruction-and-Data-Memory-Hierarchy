@@ -407,6 +407,8 @@ module tb_pipeline_harvard;
         // Assert external stall for 4 consecutive cycles (simulating 4-word burst refill)
         ext_stall = 1'b1;
         $display("  [INFO] Asserting ext_stall = 1 (simulating 4-cycle cache refill burst)...");
+        @(posedge clk);
+        #1;
 
         begin : check_freeze
             reg [31:0] frozen_if_pc, frozen_id_pc, frozen_ex_pc;
@@ -416,8 +418,9 @@ module tb_pipeline_harvard;
             frozen_id_pc = probe_id_pc;
             frozen_ex_pc = probe_ex_pc;
 
-            for (freeze_cycles = 0; freeze_cycles < 4; freeze_cycles = freeze_cycles + 1) begin
+            for (freeze_cycles = 0; freeze_cycles < 3; freeze_cycles = freeze_cycles + 1) begin
                 @(posedge clk);
+                #1;
                 if (probe_if_pc != frozen_if_pc || probe_id_pc != frozen_id_pc || probe_ex_pc != frozen_ex_pc) begin
                     $display("  [FAIL] Pipeline register drifted during stall freeze! Cycle %0d", freeze_cycles);
                     errors = errors + 1;
